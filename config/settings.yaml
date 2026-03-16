@@ -27,6 +27,16 @@ model:
   embedding_model: text-embedding-3-large
   timeout_seconds: 60
 
+impact:
+  enabled: true
+  # currently supports: semantic_scholar
+  provider: semantic_scholar
+  base_url: https://api.semanticscholar.org
+  api_key_env: SEMANTIC_SCHOLAR_API_KEY
+  timeout_seconds: 4
+  max_papers_per_run: 80
+  max_workers: 6
+
 notify:
   console: true
   email:

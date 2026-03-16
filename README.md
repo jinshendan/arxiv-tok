@@ -68,6 +68,7 @@ Dashboard 左侧可配置：
 - 总结语言：中文 / English
 - 语义匹配开关：启用后可填写 `semantic_queries`（与“是否启用 LLM 总结”解耦）
 - 结果数量：`top_k` 与每个分类抓取上限
+- 评分解释：总分 = 匹配分 + 热度分 + 贡献度分；热度/贡献度来自 Semantic Scholar 的引用数据（非标题关键词启发式）
 
 支持实时进度显示，也可手动点击“停止搜索并返回当前结果”。
 
@@ -107,6 +108,21 @@ model:
 ```
 
 如果模型 API 不可用，系统会自动降级为关键词匹配和本地摘要，不会中断搜索。
+
+外部热度数据配置（`config/settings.yaml`）：
+
+```yaml
+impact:
+  enabled: true
+  provider: semantic_scholar
+  base_url: https://api.semanticscholar.org
+  api_key_env: SEMANTIC_SCHOLAR_API_KEY
+  timeout_seconds: 4
+  max_papers_per_run: 80
+  max_workers: 6
+```
+
+注：`SEMANTIC_SCHOLAR_API_KEY` 可选；不填也可用，但限流更严格。
 
 ### 命令行用法
 
@@ -250,6 +266,7 @@ Configure from the left panel:
 - Summary language: 中文 / English
 - Semantic matching toggle with `semantic_queries` (independent from LLM summary on/off)
 - Result size controls: `top_k` and fetch cap per category
+- Score logic: total score = match + heat + contribution; heat/contribution are from Semantic Scholar citation signals (not title/abstract heuristics)
 
 Live progress is shown during search. You can also stop the run and keep partial results.
 
@@ -289,6 +306,21 @@ model:
 ```
 
 If model APIs are unavailable, the app gracefully falls back to lexical matching and local summaries.
+
+External impact config (`config/settings.yaml`):
+
+```yaml
+impact:
+  enabled: true
+  provider: semantic_scholar
+  base_url: https://api.semanticscholar.org
+  api_key_env: SEMANTIC_SCHOLAR_API_KEY
+  timeout_seconds: 4
+  max_papers_per_run: 80
+  max_workers: 6
+```
+
+Note: `SEMANTIC_SCHOLAR_API_KEY` is optional, but recommended for higher rate limits.
 
 ### CLI Usage
 

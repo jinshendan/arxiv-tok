@@ -77,3 +77,24 @@ model:
     cfg = load_settings(p).model
     client = LLMProviderClient(cfg)
     assert client.chat_enabled is False
+
+
+def test_load_settings_impact_block(tmp_path: Path) -> None:
+    p = tmp_path / "settings.yaml"
+    p.write_text(
+        """
+impact:
+  enabled: true
+  provider: semantic_scholar
+  base_url: https://api.semanticscholar.org
+  api_key_env: SEMANTIC_SCHOLAR_API_KEY
+  timeout_seconds: 5
+  max_papers_per_run: 60
+  max_workers: 4
+""",
+        encoding="utf-8",
+    )
+    s = load_settings(p)
+    assert s.impact.enabled is True
+    assert s.impact.provider == "semantic_scholar"
+    assert s.impact.max_papers_per_run == 60

@@ -203,6 +203,11 @@ TEXT = {
         "en": "No matches in this window. Try broader keywords or a longer window.",
     },
     "pill_score": {"zh": "评分", "en": "Score"},
+    "pill_base": {"zh": "匹配", "en": "Match"},
+    "pill_heat": {"zh": "热度", "en": "Heat"},
+    "pill_contribution": {"zh": "贡献", "en": "Contribution"},
+    "pill_citation": {"zh": "引用", "en": "Citations"},
+    "pill_influential": {"zh": "高影响引用", "en": "Influential"},
     "pill_semantic": {"zh": "语义", "en": "Semantic"},
     "na": {"zh": "无", "en": "N/A"},
     "arxiv_link": {"zh": "arXiv 链接", "en": "Open on arXiv"},
@@ -495,10 +500,20 @@ def _render_results(lang: str, result: SearchResult) -> None:
     for idx, (scored, summary) in enumerate(result.items, start=1):
         paper = scored.paper
         sem = t(lang, "na") if scored.semantic_similarity is None else f"{scored.semantic_similarity:.3f}"
+        impact_ready = scored.impact_source != "none"
+        heat = str(scored.heat_score) if impact_ready else t(lang, "na")
+        contribution = str(scored.contribution_score) if impact_ready else t(lang, "na")
+        citation = str(scored.citation_count) if impact_ready else t(lang, "na")
+        influential = str(scored.influential_citation_count) if impact_ready else t(lang, "na")
         st.markdown('<div class="paper-card">', unsafe_allow_html=True)
         st.markdown(f"**{idx}. {paper.title}**")
         st.markdown(
             f'<span class="pill">{t(lang, "pill_score")} {scored.score}</span>'
+            f'<span class="pill">{t(lang, "pill_base")} {scored.base_score}</span>'
+            f'<span class="pill">{t(lang, "pill_heat")} {heat}</span>'
+            f'<span class="pill">{t(lang, "pill_contribution")} {contribution}</span>'
+            f'<span class="pill">{t(lang, "pill_citation")} {citation}</span>'
+            f'<span class="pill">{t(lang, "pill_influential")} {influential}</span>'
             f'<span class="pill">{t(lang, "pill_semantic")} {sem}</span>'
             f'<span class="pill">{paper.published.date()}</span>',
             unsafe_allow_html=True,

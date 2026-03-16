@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from .config import KeywordProfile
-from .models import Paper, ScoredPaper
+from .models import ImpactSignal, Paper, ScoredPaper
 
 
 def _contains(text: str, token: str) -> bool:
@@ -33,8 +33,10 @@ def filter_and_rank(
     papers: list[Paper],
     profile: KeywordProfile,
     semantic_scores: dict[str, float] | None = None,
+    impact_scores: dict[str, ImpactSignal] | None = None,
 ) -> list[ScoredPaper]:
     semantic_scores = semantic_scores or {}
+    impact_scores = impact_scores or {}
     scored: list[ScoredPaper] = []
     for paper in papers:
         score, lexical_ok = score_paper(paper, profile)
@@ -49,12 +51,24 @@ def filter_and_rank(
         if semantic_ok:
             score += int(round(similarity * 10 * profile.semantic_weight))
 
+        base_score = score
+        impact = impact_scores.get(paper.paper_id, ImpactSignal())
+        score += int(round(impact.heat_score * profile.heat_weight + impact.contribution_score * profile.contribution_weight))
+
         if score >= profile.min_score:
             scored.append(
                 ScoredPaper(
                     paper=paper,
                     profile_name=profile.name,
                     score=score,
+                    base_score=base_score,
+                    heat_score=impact.heat_score,
+                    contribution_score=impact.contribution_score,
+                    citation_count=impact.citation_count,
+                    influential_citation_count=impact.influential_citation_count,
+                    reference_count=impact.reference_count,
+                    citation_velocity=impact.citation_velocity,
+                    impact_source=impact.source,
                     semantic_similarity=similarity if semantic_ok else None,
                 )
             )

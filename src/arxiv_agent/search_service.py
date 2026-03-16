@@ -6,7 +6,9 @@ from typing import Callable
 from .arxiv_client import ArxivClient
 from .config import KeywordRules, Settings
 from .filtering import filter_and_rank
+from .impact import ImpactScorer
 from .models import ScoredPaper, SummaryResult
+from .recommendation import localize_recommendation, recommendation_code_from_score
 from .semantic import SemanticMatcher
 from .summarizer import Summarizer
 
@@ -33,6 +35,14 @@ _PROGRESS_MESSAGES = {
     "fetched_done": {
         "zh": "抓取完成，共 {count} 篇，开始过滤...",
         "en": "Fetch complete: {count} papers, now filtering...",
+    },
+    "impacting": {
+        "zh": "拉取外部热度/贡献度: {done}/{total}",
+        "en": "Fetching external heat/contribution: {done}/{total}",
+    },
+    "impact_done": {
+        "zh": "外部热度数据完成: {count} 篇命中",
+        "en": "External impact data ready: {count} papers matched",
     },
     "filtered": {
         "zh": "过滤完成: {profile} ({idx}/{total}), 命中 {count}",
@@ -146,6 +156,15 @@ def run_search(
 
     summarizer = Summarizer(settings.model)
     semantic_matcher = SemanticMatcher(settings.model)
+    impact_scorer = ImpactScorer(settings.impact)
+    impact_scores: dict = {}
+    if impact_scorer.enabled:
+        impact_scores = impact_scorer.score_papers(
+            papers,
+            should_stop=should_stop,
+            progress_callback=lambda done, total: emit(_msg(language, "impacting", done=done, total=total), 0.63),
+        )
+        emit(_msg(language, "impact_done", count=len(impact_scores)), 0.65)
 
     ranked_by_profile: list[tuple[str, list[ScoredPaper]]] = []
     for idx, profile in enumerate(selected_profiles, start=1):
@@ -154,7 +173,12 @@ def run_search(
             break
         profile_for_search = replace(profile, max_items_per_run=top_k)
         semantic_scores = semantic_matcher.score_papers(papers, profile_for_search.semantic_queries)
-        ranked = filter_and_rank(papers, profile_for_search, semantic_scores=semantic_scores)
+        ranked = filter_and_rank(
+            papers,
+            profile_for_search,
+            semantic_scores=semantic_scores,
+            impact_scores=impact_scores,
+        )
         ranked_by_profile.append((profile_for_search.name, ranked))
         emit(
             _msg(
@@ -180,6 +204,10 @@ def run_search(
                 stopped = True
                 break
             summary = summarizer.summarize(scored.paper, output_language=summary_language)
+            summary.recommendation = localize_recommendation(
+                recommendation_code_from_score(scored),
+                summary_language,
+            )
             items.append((scored, summary))
             summarized += 1
             tail_progress = summarized / max(1, total_to_summarize)
@@ -193,6 +221,18 @@ def run_search(
                 ),
                 0.65 + 0.35 * tail_progress,
             )
+
+    items.sort(
+        key=lambda x: (
+            x[0].score,
+            x[0].heat_score,
+            x[0].contribution_score,
+            x[0].citation_count,
+            x[0].semantic_similarity or 0.0,
+            x[0].paper.published,
+        ),
+        reverse=True,
+    )
 
     if not items:
         emit(_msg(language, "done_empty"), 1.0)

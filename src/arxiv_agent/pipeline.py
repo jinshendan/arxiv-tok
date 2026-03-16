@@ -7,8 +7,10 @@ from .arxiv_client import ArxivClient
 from .config import KeywordRules, Settings
 from .db import Database
 from .filtering import filter_and_rank
+from .impact import ImpactScorer
 from .models import ScoredPaper, SummaryResult
 from .notifier import Notifier
+from .recommendation import localize_recommendation, recommendation_code_from_score
 from .semantic import SemanticMatcher
 from .summarizer import Summarizer
 
@@ -45,14 +47,25 @@ def run_once(settings: Settings, rules: KeywordRules) -> RunResult:
 
         summarizer = Summarizer(settings.model)
         semantic_matcher = SemanticMatcher(settings.model)
+        impact_scorer = ImpactScorer(settings.impact)
+        impact_scores = impact_scorer.score_papers(papers)
         notifier = Notifier(settings.notify)
 
         items: list[tuple[ScoredPaper, SummaryResult]] = []
         for profile in rules.profiles:
             semantic_scores = semantic_matcher.score_papers(papers, profile.semantic_queries)
-            ranked = filter_and_rank(papers, profile, semantic_scores=semantic_scores)
+            ranked = filter_and_rank(
+                papers,
+                profile,
+                semantic_scores=semantic_scores,
+                impact_scores=impact_scores,
+            )
             for scored in ranked:
                 summary = summarizer.summarize(scored.paper)
+                summary.recommendation = localize_recommendation(
+                    recommendation_code_from_score(scored),
+                    "zh",
+                )
                 db.record_match(
                     run_id=run_id,
                     paper_id=scored.paper.paper_id,
@@ -63,6 +76,18 @@ def run_once(settings: Settings, rules: KeywordRules) -> RunResult:
                     recommendation=summary.recommendation,
                 )
                 items.append((scored, summary))
+
+        items.sort(
+            key=lambda x: (
+                x[0].score,
+                x[0].heat_score,
+                x[0].contribution_score,
+                x[0].citation_count,
+                x[0].semantic_similarity or 0.0,
+                x[0].paper.published,
+            ),
+            reverse=True,
+        )
 
         digest = notifier.format_digest(items)
         channels = notifier.send(digest)

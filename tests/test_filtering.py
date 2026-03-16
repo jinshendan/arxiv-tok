@@ -60,3 +60,6 @@ def test_filter_rank_semantic_hit_without_lexical_match() -> None:
     assert len(ranked) == 1
     assert ranked[0].paper.paper_id == p1.paper_id
     assert ranked[0].semantic_similarity == 0.41
+    assert ranked[0].score >= ranked[0].base_score
+    assert ranked[0].heat_score >= 0
+    assert ranked[0].contribution_score >= 0

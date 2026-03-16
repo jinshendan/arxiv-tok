@@ -23,10 +23,17 @@ class Notifier:
         lines = [title, ""]
         for idx, (scored, summary) in enumerate(items, start=1):
             p = scored.paper
+            impact_ready = scored.impact_source != "none"
+            heat_text = str(scored.heat_score) if impact_ready else "N/A"
+            contribution_text = str(scored.contribution_score) if impact_ready else "N/A"
+            citation_text = str(scored.citation_count) if impact_ready else "N/A"
+            influential_text = str(scored.influential_citation_count) if impact_ready else "N/A"
             lines.extend(
                 [
                     f"{idx}. [{scored.profile_name}] {p.title}",
                     f"   Score: {scored.score}",
+                    f"   Match/Heat/Contribution: {scored.base_score}/{heat_text}/{contribution_text}",
+                    f"   Citations: {citation_text} (influential: {influential_text})",
                     f"   Semantic: {scored.semantic_similarity:.3f}" if scored.semantic_similarity is not None else "   Semantic: N/A",
                     f"   URL: {p.url}",
                     f"   摘要: {summary.summary_cn}",

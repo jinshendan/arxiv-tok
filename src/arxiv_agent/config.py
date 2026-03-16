@@ -19,6 +19,17 @@ class ModelConfig:
 
 
 @dataclass
+class ImpactConfig:
+    enabled: bool = False
+    provider: str = "semantic_scholar"
+    base_url: str = "https://api.semanticscholar.org"
+    api_key_env: str = "SEMANTIC_SCHOLAR_API_KEY"
+    timeout_seconds: int = 4
+    max_papers_per_run: int = 80
+    max_workers: int = 6
+
+
+@dataclass
 class NotifyEmailConfig:
     enabled: bool = False
     smtp_host: str = ""
@@ -62,6 +73,7 @@ class Settings:
     request_timeout_seconds: int = 30
     user_agent: str = "arxiv-agent/0.1"
     model: ModelConfig = field(default_factory=ModelConfig)
+    impact: ImpactConfig = field(default_factory=ImpactConfig)
     notify: NotifyConfig = field(default_factory=NotifyConfig)
     schedule: ScheduleConfig = field(default_factory=ScheduleConfig)
 
@@ -75,6 +87,8 @@ class KeywordProfile:
     semantic_queries: list[str] = field(default_factory=list)
     semantic_min_similarity: float = 0.35
     semantic_weight: int = 2
+    heat_weight: float = 1.0
+    contribution_weight: float = 1.0
     min_score: int = 1
     max_items_per_run: int = 10
 
@@ -98,6 +112,7 @@ def load_settings(path: str | Path) -> Settings:
 
     # Backward compatibility: prefer `model`, fallback to legacy `openai`.
     model_data = data.get("model", data.get("openai", {}))
+    impact_data = data.get("impact", {})
     notify_data = data.get("notify", {})
     email_data = notify_data.get("email", {})
     telegram_data = notify_data.get("telegram", {})
@@ -121,6 +136,15 @@ def load_settings(path: str | Path) -> Settings:
             embedding_model=str(model_data.get("embedding_model", "text-embedding-3-large")),
             require_api_key=bool(model_data.get("require_api_key", True)),
             timeout_seconds=int(model_data.get("timeout_seconds", 60)),
+        ),
+        impact=ImpactConfig(
+            enabled=bool(impact_data.get("enabled", False)),
+            provider=str(impact_data.get("provider", "semantic_scholar")),
+            base_url=str(impact_data.get("base_url", "https://api.semanticscholar.org")),
+            api_key_env=str(impact_data.get("api_key_env", "SEMANTIC_SCHOLAR_API_KEY")),
+            timeout_seconds=int(impact_data.get("timeout_seconds", 4)),
+            max_papers_per_run=int(impact_data.get("max_papers_per_run", 80)),
+            max_workers=int(impact_data.get("max_workers", 6)),
         ),
         notify=NotifyConfig(
             console=bool(notify_data.get("console", True)),
@@ -161,6 +185,8 @@ def load_keyword_rules(path: str | Path) -> KeywordRules:
                 semantic_queries=list(raw.get("semantic_queries", [])),
                 semantic_min_similarity=float(raw.get("semantic_min_similarity", 0.35)),
                 semantic_weight=int(raw.get("semantic_weight", 2)),
+                heat_weight=float(raw.get("heat_weight", 1.0)),
+                contribution_weight=float(raw.get("contribution_weight", 1.0)),
                 min_score=int(raw.get("min_score", 1)),
                 max_items_per_run=int(raw.get("max_items_per_run", 10)),
             )

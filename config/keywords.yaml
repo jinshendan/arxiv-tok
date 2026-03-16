@@ -22,6 +22,8 @@ profiles:
       - 具备工具使用能力的语言模型智能体
     semantic_min_similarity: 0.33
     semantic_weight: 2
+    heat_weight: 1.0
+    contribution_weight: 1.0
     min_score: 3
     max_items_per_run: 10
 
@@ -41,5 +43,7 @@ profiles:
       - 多语言知识检索问答
     semantic_min_similarity: 0.32
     semantic_weight: 2
+    heat_weight: 1.0
+    contribution_weight: 1.0
     min_score: 1
     max_items_per_run: 8
