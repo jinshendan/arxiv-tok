@@ -35,3 +35,28 @@ def test_filter_rank_hits() -> None:
     ranked = filter_and_rank(papers, profile)
     assert len(ranked) == 1
     assert ranked[0].paper.title == "Agentic LLM with Tool Use"
+
+
+def test_filter_rank_semantic_hit_without_lexical_match() -> None:
+    profile = KeywordProfile(
+        name="multilingual-rag",
+        include_all=[],
+        include_any=["retrieval augmented generation"],
+        exclude_any=[],
+        semantic_queries=["多语言检索增强生成"],
+        semantic_min_similarity=0.33,
+        semantic_weight=2,
+        min_score=1,
+        max_items_per_run=5,
+    )
+    p1 = _paper("Cross-lingual Context Fusion", "A method for multilingual QA over documents")
+    p2 = _paper("Graph Sampling Methods", "Pure graph theory with no retrieval setup")
+
+    semantic_scores = {
+        p1.paper_id: 0.41,
+        p2.paper_id: 0.18,
+    }
+    ranked = filter_and_rank([p1, p2], profile, semantic_scores=semantic_scores)
+    assert len(ranked) == 1
+    assert ranked[0].paper.paper_id == p1.paper_id
+    assert ranked[0].semantic_similarity == 0.41

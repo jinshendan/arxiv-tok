@@ -11,6 +11,7 @@ class OpenAIConfig:
     enabled: bool = False
     api_key_env: str = "OPENAI_API_KEY"
     model: str = "gpt-5-mini"
+    embedding_model: str = "text-embedding-3-large"
     timeout_seconds: int = 60
 
 
@@ -65,6 +66,9 @@ class KeywordProfile:
     include_all: list[str] = field(default_factory=list)
     include_any: list[str] = field(default_factory=list)
     exclude_any: list[str] = field(default_factory=list)
+    semantic_queries: list[str] = field(default_factory=list)
+    semantic_min_similarity: float = 0.35
+    semantic_weight: int = 2
     min_score: int = 1
     max_items_per_run: int = 10
 
@@ -102,6 +106,7 @@ def load_settings(path: str | Path) -> Settings:
             enabled=bool(openai_data.get("enabled", False)),
             api_key_env=openai_data.get("api_key_env", "OPENAI_API_KEY"),
             model=openai_data.get("model", "gpt-5-mini"),
+            embedding_model=openai_data.get("embedding_model", "text-embedding-3-large"),
             timeout_seconds=int(openai_data.get("timeout_seconds", 60)),
         ),
         notify=NotifyConfig(
@@ -140,6 +145,9 @@ def load_keyword_rules(path: str | Path) -> KeywordRules:
                 include_all=list(raw.get("include_all", [])),
                 include_any=list(raw.get("include_any", [])),
                 exclude_any=list(raw.get("exclude_any", [])),
+                semantic_queries=list(raw.get("semantic_queries", [])),
+                semantic_min_similarity=float(raw.get("semantic_min_similarity", 0.35)),
+                semantic_weight=int(raw.get("semantic_weight", 2)),
                 min_score=int(raw.get("min_score", 1)),
                 max_items_per_run=int(raw.get("max_items_per_run", 10)),
             )

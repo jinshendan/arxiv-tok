@@ -27,9 +27,9 @@ cp config/keywords.yaml config/keywords.local.yaml
 cp .env.example .env
 ```
 
-2. 在 `config/keywords.local.yaml` 里配置你的关键词规则（支持 `include_all/include_any/exclude_any`）。
+2. 关键词就在 `config/keywords.local.yaml` 里配置（支持关键词匹配 + 语义匹配，多语言可混用）。
 
-3. 如果要开启 LLM 摘要，把 `openai.enabled: true` 并配置环境变量 `OPENAI_API_KEY`。
+3. 如果要开启 LLM 摘要和语义匹配，把 `openai.enabled: true` 并配置环境变量 `OPENAI_API_KEY`。
 
 4. 如果要开启通知，打开 `notify.email.enabled` 或 `notify.telegram.enabled` 并配置对应参数。
 
@@ -58,6 +58,9 @@ arxiv-agent schedule --settings config/settings.local.yaml --keywords config/key
 - `include_all`: 这些词必须都出现，否则不命中。
 - `include_any`: 这些词至少出现一个。
 - `exclude_any`: 出现任意一个即排除。
+- `semantic_queries`: 语义查询短句列表（支持中英文混合），用于 embedding 相似度匹配。
+- `semantic_min_similarity`: 语义命中阈值（建议 0.30-0.40）。
+- `semantic_weight`: 语义分数权重（越大越偏向语义召回）。
 - `min_score`: 最低得分阈值。
 - `max_items_per_run`: 每次运行最多输出多少篇。
 
@@ -65,7 +68,26 @@ arxiv-agent schedule --settings config/settings.local.yaml --keywords config/key
 
 - 每个 `include_all` 命中 +2 分
 - 每个 `include_any` 命中 +1 分
+- 若语义相似度超过阈值，追加语义分数加权
 - 有 `exclude_any` 命中直接剔除
+
+示例（中英混合语义查询）：
+
+```yaml
+profiles:
+  - name: multilingual-rag
+    include_all: []
+    include_any: []
+    exclude_any: []
+    semantic_queries:
+      - retrieval augmented generation for long context QA
+      - 多语言检索增强生成
+      - cross-lingual reranking
+    semantic_min_similarity: 0.33
+    semantic_weight: 2
+    min_score: 1
+    max_items_per_run: 10
+```
 
 ## 5. 目录结构
 
@@ -90,6 +112,5 @@ arxiv-agent schedule --settings config/settings.local.yaml --keywords config/key
 
 ## 6. 后续增强建议
 
-- 用 embedding 召回替代纯关键词匹配。
 - 增加网页 Dashboard（查看历史摘要、标记有用/无用）。
 - 将 SQLite 升级到 Postgres，并接入多用户。

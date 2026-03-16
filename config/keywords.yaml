@@ -15,6 +15,13 @@ profiles:
       - function calling
     exclude_any:
       - survey
+    semantic_queries:
+      - tool-using language model agent
+      - multi-agent reasoning with tools
+      - 多智能体 + 工具调用 + 推理
+      - 具备工具使用能力的语言模型智能体
+    semantic_min_similarity: 0.33
+    semantic_weight: 2
     min_score: 3
     max_items_per_run: 10
 
@@ -27,5 +34,12 @@ profiles:
       - reranker
       - vector database
     exclude_any: []
+    semantic_queries:
+      - retrieval augmented generation
+      - query rewriting and reranking in rag
+      - 检索增强生成
+      - 多语言知识检索问答
+    semantic_min_similarity: 0.32
+    semantic_weight: 2
     min_score: 1
     max_items_per_run: 8

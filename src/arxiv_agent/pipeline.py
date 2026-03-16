@@ -9,6 +9,7 @@ from .db import Database
 from .filtering import filter_and_rank
 from .models import ScoredPaper, SummaryResult
 from .notifier import Notifier
+from .semantic import SemanticMatcher
 from .summarizer import Summarizer
 
 
@@ -37,11 +38,13 @@ def run_once(settings: Settings, rules: KeywordRules) -> RunResult:
         db.upsert_papers(papers)
 
         summarizer = Summarizer(settings.openai)
+        semantic_matcher = SemanticMatcher(settings.openai)
         notifier = Notifier(settings.notify)
 
         items: list[tuple[ScoredPaper, SummaryResult]] = []
         for profile in rules.profiles:
-            ranked = filter_and_rank(papers, profile)
+            semantic_scores = semantic_matcher.score_papers(papers, profile.semantic_queries)
+            ranked = filter_and_rank(papers, profile, semantic_scores=semantic_scores)
             for scored in ranked:
                 summary = summarizer.summarize(scored.paper)
                 db.record_match(

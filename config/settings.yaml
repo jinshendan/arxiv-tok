@@ -8,6 +8,7 @@ openai:
   enabled: false
   api_key_env: OPENAI_API_KEY
   model: gpt-5-mini
+  embedding_model: text-embedding-3-large
   timeout_seconds: 60
 
 notify:

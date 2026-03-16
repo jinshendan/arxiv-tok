@@ -21,6 +21,7 @@ class ScoredPaper:
     paper: Paper
     profile_name: str
     score: int
+    semantic_similarity: float | None = None
 
 
 @dataclass(slots=True)
