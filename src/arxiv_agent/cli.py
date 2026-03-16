@@ -191,6 +191,11 @@ def search(
         max=5000,
         help="Fetch limit per arXiv category for this search",
     ),
+    summary_lang: str = typer.Option(
+        "zh",
+        "--summary-lang",
+        help="Summary output language (e.g. zh / en / English / 中文)",
+    ),
 ) -> None:
     settings_path = _resolve_settings_path(settings)
     keywords_path = _resolve_keywords_path(keywords)
@@ -213,6 +218,7 @@ def search(
             profile_names=profile,
             top_k=top_k,
             max_results_per_category=max_results_per_category,
+            summary_language=summary_lang,
         )
     except ValueError as e:
         raise typer.BadParameter(str(e)) from e

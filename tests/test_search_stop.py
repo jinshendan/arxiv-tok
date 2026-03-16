@@ -32,7 +32,11 @@ def test_run_search_respects_stop_signal(monkeypatch) -> None:
     )
     monkeypatch.setattr(
         "arxiv_agent.summarizer.Summarizer.summarize",
-        lambda self, paper: SummaryResult(summary_cn="x", highlights=["h1", "h2", "h3"], recommendation="可选阅读"),
+        lambda self, paper, output_language="zh": SummaryResult(
+            summary_cn="x",
+            highlights=["h1", "h2", "h3"],
+            recommendation="可选阅读",
+        ),
     )
 
     settings = Settings()
@@ -52,3 +56,41 @@ def test_run_search_respects_stop_signal(monkeypatch) -> None:
     assert result.stopped is True
     assert result.fetched == 1
     assert result.matched == 0
+
+
+def test_run_search_passes_summary_language(monkeypatch) -> None:
+    called: dict[str, str] = {}
+    monkeypatch.setattr(
+        "arxiv_agent.arxiv_client.ArxivClient.fetch_recent",
+        lambda self, categories, max_results_per_category, lookback_hours, page_size, should_stop, progress_callback: [
+            _sample_paper()
+        ],
+    )
+    monkeypatch.setattr(
+        "arxiv_agent.semantic.SemanticMatcher.score_papers",
+        lambda self, papers, semantic_queries: {},
+    )
+
+    def fake_summarize(self, paper, output_language="zh"):
+        called["lang"] = output_language
+        return SummaryResult(summary_cn="x", highlights=["h1", "h2", "h3"], recommendation="Optional")
+
+    monkeypatch.setattr("arxiv_agent.summarizer.Summarizer.summarize", fake_summarize)
+
+    settings = Settings()
+    rules = KeywordRules(
+        categories=["cs.AI"],
+        profiles=[KeywordProfile(name="p1", include_any=["agent"], max_items_per_run=5)],
+    )
+
+    result = run_search(
+        settings,
+        rules,
+        top_k=5,
+        max_results_per_category=50,
+        summary_language="en",
+    )
+
+    assert result.stopped is False
+    assert result.matched == 1
+    assert called["lang"] == "en"

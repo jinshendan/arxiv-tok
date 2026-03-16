@@ -64,7 +64,9 @@ Dashboard 左侧可配置：
   - 常用方向（中文多选，自动映射 arXiv 分类）
   - 高级自定义（手动填写 arXiv 分类）
 - 关键词规则：`include_any / include_all / exclude_any`
-- 语义匹配开关：启用后可填写 `semantic_queries`
+- 模型与总结：可直接设置 provider / base_url / model / embedding / API Key 环境变量
+- 总结语言：中文 / English
+- 语义匹配开关：启用后可填写 `semantic_queries`（与“是否启用 LLM 总结”解耦）
 - 结果数量：`top_k` 与每个分类抓取上限
 
 支持实时进度显示，也可手动点击“停止搜索并返回当前结果”。
@@ -136,6 +138,7 @@ arxiv-agent schedule
 arxiv-agent search --last 6m -p llm-agent -k 20
 arxiv-agent search --last 1y -p rag -k 20
 arxiv-agent search --last 2w -k 15
+arxiv-agent search --last 3m -k 10 --summary-lang en
 ```
 
 ### 配置文件
@@ -243,7 +246,9 @@ Configure from the left panel:
   - Common domains (human-friendly labels mapped to arXiv categories)
   - Advanced custom (manual arXiv category input)
 - Keyword rules: `include_any / include_all / exclude_any`
-- Semantic matching toggle with `semantic_queries`
+- Model & summary: provider / base_url / model / embedding / API-key env var
+- Summary language: 中文 / English
+- Semantic matching toggle with `semantic_queries` (independent from LLM summary on/off)
 - Result size controls: `top_k` and fetch cap per category
 
 Live progress is shown during search. You can also stop the run and keep partial results.
@@ -315,6 +320,7 @@ arxiv-agent schedule
 arxiv-agent search --last 6m -p llm-agent -k 20
 arxiv-agent search --last 1y -p rag -k 20
 arxiv-agent search --last 2w -k 15
+arxiv-agent search --last 3m -k 10 --summary-lang en
 ```
 
 ### Config Files

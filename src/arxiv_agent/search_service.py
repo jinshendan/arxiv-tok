@@ -82,6 +82,7 @@ def run_search(
     progress_callback: Callable[[str, float], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
     language: str = "zh",
+    summary_language: str = "zh",
 ) -> SearchResult:
     if not rules.profiles:
         raise ValueError("No profiles found in keyword rules")
@@ -178,7 +179,7 @@ def run_search(
             if should_stop and should_stop():
                 stopped = True
                 break
-            summary = summarizer.summarize(scored.paper)
+            summary = summarizer.summarize(scored.paper, output_language=summary_language)
             items.append((scored, summary))
             summarized += 1
             tail_progress = summarized / max(1, total_to_summarize)

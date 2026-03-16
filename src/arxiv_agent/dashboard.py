@@ -10,7 +10,7 @@ from pathlib import Path
 import httpx
 import streamlit as st
 
-from arxiv_agent.config import KeywordProfile, KeywordRules, Settings, load_settings
+from arxiv_agent.config import KeywordProfile, KeywordRules, ModelConfig, Settings, load_settings
 from arxiv_agent.search_service import SearchResult, run_search
 
 
@@ -111,9 +111,20 @@ TEXT = {
     },
     "include_all": {"zh": "必须包含关键词 include_all（可选）", "en": "include_all (optional)"},
     "exclude_any": {"zh": "排除关键词 exclude_any（可选）", "en": "exclude_any (optional)"},
+    "model_section": {"zh": "模型与总结", "en": "Model & Summary"},
+    "model_on": {"zh": "启用 LLM 总结", "en": "Enable LLM Summarization"},
+    "model_provider": {"zh": "模型提供方", "en": "Model Provider"},
+    "base_url": {"zh": "Base URL", "en": "Base URL"},
+    "model_name": {"zh": "聊天模型名", "en": "Chat Model Name"},
+    "embedding_model_name": {"zh": "Embedding 模型名", "en": "Embedding Model Name"},
+    "api_key_env": {"zh": "API Key 环境变量名", "en": "API Key Env Var"},
+    "require_api_key": {"zh": "要求 API Key", "en": "Require API Key"},
+    "api_key_status": {"zh": "API Key 状态", "en": "API Key Status"},
+    "api_key_found": {"zh": "已检测到", "en": "Detected"},
+    "api_key_missing": {"zh": "未检测到", "en": "Not detected"},
+    "summary_language": {"zh": "总结语言", "en": "Summary Language"},
     "semantic": {"zh": "语义匹配", "en": "Semantic Matching"},
     "semantic_on": {"zh": "启用语义匹配（模型 API）", "en": "Enable semantic matching (Model API)"},
-    "semantic_provider": {"zh": "当前模型提供方", "en": "Current model provider"},
     "semantic_queries": {
         "zh": "语义查询 semantic_queries（一行一个）",
         "en": "semantic_queries (one per line)",
@@ -131,9 +142,17 @@ TEXT = {
         "zh": "请至少填写 include_any/include_all 或 semantic_queries 中的一种。",
         "en": "Please provide at least one of include_any/include_all/semantic_queries.",
     },
-    "no_api_key": {
-        "zh": "未检测到 {env_name}，语义匹配已自动关闭。",
-        "en": "{env_name} not found. Semantic matching is disabled automatically.",
+    "no_api_key_model": {
+        "zh": "未检测到 {env_name}，LLM 总结已自动关闭。",
+        "en": "{env_name} not found. LLM summarization is disabled automatically.",
+    },
+    "semantic_need_model": {
+        "zh": "语义匹配需要开启模型总结并配置 embedding 模型。",
+        "en": "Semantic matching requires enabled model summarization and embedding model config.",
+    },
+    "semantic_offline_hint": {
+        "zh": "已关闭语义匹配：当前设置无法调用 embedding。",
+        "en": "Semantic matching disabled: embedding is not available with current model settings.",
     },
     "no_categories": {
         "zh": "请至少选择一个方向，或填写一个有效分类。",
@@ -179,6 +198,8 @@ TEXT = {
 
 
 LANG_LABELS = {"zh": "中文", "en": "English"}
+SUMMARY_LANG_OPTIONS = ["zh", "en"]
+SUMMARY_LANG_LABELS = {"zh": "中文", "en": "English"}
 WINDOW_MODE_OPTIONS = ["days", "months", "years"]
 WINDOW_MODE_LABELS = {
     "days": {"zh": "天", "en": "Days"},
@@ -186,6 +207,12 @@ WINDOW_MODE_LABELS = {
     "years": {"zh": "年", "en": "Years"},
 }
 SCOPE_MODE_OPTIONS = ["all", "preset", "advanced"]
+MODEL_PROVIDER_OPTIONS = ["openai", "openai_compatible", "ollama"]
+MODEL_PROVIDER_LABELS = {
+    "openai": {"zh": "OpenAI", "en": "OpenAI"},
+    "openai_compatible": {"zh": "兼容 OpenAI 接口", "en": "OpenAI-compatible"},
+    "ollama": {"zh": "Ollama（本地）", "en": "Ollama (Local)"},
+}
 
 
 def t(lang: str, key: str, **kwargs) -> str:
@@ -207,6 +234,11 @@ def _domain_label(lang: str, preset_key: str) -> str:
     return DOMAIN_PRESETS[preset_key]["label"][lang_key]
 
 
+def _provider_label(lang: str, provider: str) -> str:
+    lang_key = "en" if lang.lower().startswith("en") else "zh"
+    return MODEL_PROVIDER_LABELS.get(provider, {}).get(lang_key, provider)
+
+
 def _parse_terms(raw: str) -> list[str]:
     normalized = raw.replace(",", "\n")
     return [x.strip() for x in normalized.splitlines() if x.strip()]
@@ -224,6 +256,53 @@ def _build_window(mode: str, value: int) -> tuple[int, int, float]:
     if mode == "months":
         return 0, value, 0.0
     return 0, 0, float(value)
+
+
+def _normalize_provider(provider: str) -> str:
+    token = provider.strip().lower()
+    if token in MODEL_PROVIDER_OPTIONS:
+        return token
+    return "openai_compatible"
+
+
+def _ensure_model_state(base_settings: Settings) -> None:
+    cfg = base_settings.model
+    st.session_state.setdefault("model_enabled", bool(cfg.enabled))
+    st.session_state.setdefault("model_provider", _normalize_provider(cfg.provider))
+    st.session_state.setdefault("model_base_url", cfg.base_url)
+    st.session_state.setdefault("model_api_key_env", cfg.api_key_env)
+    st.session_state.setdefault("model_name", cfg.model)
+    st.session_state.setdefault("model_embedding", cfg.embedding_model)
+    st.session_state.setdefault("model_require_api_key", bool(cfg.require_api_key))
+    st.session_state.setdefault("summary_language", "zh")
+
+
+def _build_runtime_model_config(base_settings: Settings) -> tuple[ModelConfig, bool, bool, bool]:
+    provider = _normalize_provider(str(st.session_state.get("model_provider", "openai")))
+    api_key_env = str(st.session_state.get("model_api_key_env", "OPENAI_API_KEY")).strip() or "OPENAI_API_KEY"
+    require_api_key = bool(st.session_state.get("model_require_api_key", True))
+    if provider == "openai":
+        require_api_key = True
+    api_key_exists = bool(os.getenv(api_key_env, ""))
+    provider_requires_key = provider == "openai" or (require_api_key and provider != "ollama")
+    enabled_requested = bool(st.session_state.get("model_enabled", False))
+    chat_ready = bool(
+        enabled_requested
+        and str(st.session_state.get("model_name", "")).strip()
+        and ((not provider_requires_key) or api_key_exists)
+    )
+    embedding_ready = bool(chat_ready and str(st.session_state.get("model_embedding", "")).strip())
+    cfg = replace(
+        base_settings.model,
+        enabled=chat_ready,
+        provider=provider,
+        base_url=str(st.session_state.get("model_base_url", "")).strip(),
+        api_key_env=api_key_env,
+        model=str(st.session_state.get("model_name", "")).strip(),
+        embedding_model=str(st.session_state.get("model_embedding", "")).strip(),
+        require_api_key=require_api_key,
+    )
+    return cfg, provider_requires_key, api_key_exists, embedding_ready
 
 
 def _ensure_search_state(lang: str) -> None:
@@ -279,6 +358,7 @@ def _start_search_job(
     top_k: int,
     max_results_per_category: int,
     language: str,
+    summary_language: str,
 ) -> None:
     events: queue.Queue = queue.Queue()
     stop_event = threading.Event()
@@ -300,6 +380,7 @@ def _start_search_job(
                 progress_callback=on_progress,
                 should_stop=stop_event.is_set,
                 language=language,
+                summary_language=summary_language,
             )
             events.put({"type": "result", "result": result})
         except httpx.HTTPStatusError as e:
@@ -405,12 +486,7 @@ if "ui_lang" not in st.session_state:
 
 lang = st.session_state.get("ui_lang", "zh")
 base_settings = _load_base_settings()
-model_cfg = base_settings.model
-provider = model_cfg.provider.strip().lower()
-api_key_exists = bool(os.getenv(model_cfg.api_key_env, ""))
-provider_requires_key = provider == "openai" or (model_cfg.require_api_key and provider != "ollama")
-model_chat_ready = bool(model_cfg.enabled and model_cfg.model and ((not provider_requires_key) or api_key_exists))
-embedding_ready = bool(model_cfg.embedding_model)
+_ensure_model_state(base_settings)
 
 _ensure_search_state(lang)
 _drain_search_events(lang)
@@ -492,13 +568,52 @@ with st.sidebar:
     include_all_raw = st.text_area(t(lang, "include_all"), value="")
     exclude_any_raw = st.text_area(t(lang, "exclude_any"), value="survey")
 
+    st.subheader(t(lang, "model_section"))
+    st.checkbox(
+        t(lang, "model_on"),
+        key="model_enabled",
+    )
+    st.selectbox(
+        t(lang, "model_provider"),
+        options=MODEL_PROVIDER_OPTIONS,
+        format_func=lambda x: _provider_label(lang, x),
+        key="model_provider",
+    )
+    st.text_input(t(lang, "base_url"), key="model_base_url")
+    st.text_input(t(lang, "model_name"), key="model_name")
+    st.text_input(t(lang, "embedding_model_name"), key="model_embedding")
+    st.text_input(t(lang, "api_key_env"), key="model_api_key_env")
+    st.checkbox(
+        t(lang, "require_api_key"),
+        key="model_require_api_key",
+        disabled=str(st.session_state.get("model_provider", "openai")).strip().lower() == "openai",
+    )
+    st.selectbox(
+        t(lang, "summary_language"),
+        options=SUMMARY_LANG_OPTIONS,
+        format_func=lambda x: SUMMARY_LANG_LABELS.get(x, x),
+        key="summary_language",
+    )
+
+    runtime_model_preview, provider_requires_key, api_key_exists, embedding_ready = _build_runtime_model_config(
+        base_settings
+    )
+    api_status = t(lang, "api_key_found") if api_key_exists else t(lang, "api_key_missing")
+    st.caption(f"{t(lang, 'api_key_status')}: {api_status}")
+
     st.subheader(t(lang, "semantic"))
-    st.caption(f"{t(lang, 'semantic_provider')}: {provider}")
-    semantic_on = st.checkbox(t(lang, "semantic_on"), value=(model_chat_ready and embedding_ready))
+    st.session_state.setdefault("semantic_on", bool(runtime_model_preview.enabled and embedding_ready))
+    semantic_on = st.checkbox(
+        t(lang, "semantic_on"),
+        key="semantic_on",
+    )
+    semantic_ready = bool(runtime_model_preview.enabled and embedding_ready)
+    if semantic_on and not semantic_ready:
+        st.caption(t(lang, "semantic_offline_hint"))
     semantic_queries_raw = st.text_area(
         t(lang, "semantic_queries"),
         value="multi-agent tool use\n跨语言检索增强生成",
-        disabled=not semantic_on,
+        disabled=not (semantic_on and semantic_ready),
     )
 
     st.subheader(t(lang, "result_size"))
@@ -527,16 +642,24 @@ if run:
     include_all = _parse_terms(include_all_raw)
     exclude_any = _parse_terms(exclude_any_raw)
     semantic_queries = _parse_terms(semantic_queries_raw)
+    semantic_on = bool(st.session_state.get("semantic_on", False))
+    runtime_model_cfg, provider_requires_key, api_key_exists, embedding_ready = _build_runtime_model_config(
+        base_settings
+    )
+    summary_language = str(st.session_state.get("summary_language", "zh"))
+
+    if bool(st.session_state.get("model_enabled")) and provider_requires_key and not api_key_exists:
+        st.warning(t(lang, "no_api_key_model", env_name=runtime_model_cfg.api_key_env))
+        runtime_model_cfg = replace(runtime_model_cfg, enabled=False)
+
+    if semantic_on and (not runtime_model_cfg.enabled or not embedding_ready):
+        st.warning(t(lang, "semantic_need_model"))
+        semantic_on = False
 
     if not include_any and not include_all and not (semantic_on and semantic_queries):
         st.warning(t(lang, "need_terms"))
         st.stop()
 
-    if semantic_on and provider_requires_key and not api_key_exists:
-        st.warning(t(lang, "no_api_key", env_name=model_cfg.api_key_env))
-        semantic_on = False
-
-    runtime_model_cfg = replace(base_settings.model, enabled=semantic_on and ((not provider_requires_key) or api_key_exists))
     runtime_settings = replace(base_settings, model=runtime_model_cfg)
 
     if scope_mode == "all":
@@ -579,6 +702,7 @@ if run:
         top_k=int(top_k),
         max_results_per_category=int(max_results),
         language=lang,
+        summary_language=summary_language,
     )
     st.rerun()
 
