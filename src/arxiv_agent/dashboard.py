@@ -80,10 +80,6 @@ DOMAIN_PRESETS = {
 
 TEXT = {
     "hero_title": {"zh": "arxiv-tok 仪表盘", "en": "arxiv-tok Dashboard"},
-    "hero_desc": {
-        "zh": "输入关键词与时间范围即可搜索。不会写 arXiv 分类代码也能直接用。",
-        "en": "Search with keywords and time window. No arXiv category code knowledge required.",
-    },
     "lang_switch": {"zh": "界面语言", "en": "Interface Language"},
     "params": {"zh": "搜索参数", "en": "Search Parameters"},
     "time_window": {"zh": "时间窗口", "en": "Time Window"},
@@ -120,7 +116,17 @@ TEXT = {
     "model_provider": {"zh": "模型提供方", "en": "Model Provider"},
     "base_url": {"zh": "Base URL", "en": "Base URL"},
     "model_name": {"zh": "聊天模型名", "en": "Chat Model Name"},
+    "model_name_auto": {"zh": "本地模型", "en": "Local Model"},
     "embedding_model_name": {"zh": "Embedding 模型名", "en": "Embedding Model Name"},
+    "embedding_model_auto": {"zh": "本地 Embedding 模型", "en": "Local Embedding Model"},
+    "ollama_models_empty": {
+        "zh": "未检测到本地模型，请先执行 ollama pull，或手动输入模型名。",
+        "en": "No local models detected. Run ollama pull first, or type model name manually.",
+    },
+    "ollama_models_error": {
+        "zh": "无法连接 Ollama 服务，请检查 Base URL 或本地服务状态。",
+        "en": "Cannot reach Ollama service. Check Base URL or local service status.",
+    },
     "api_key_env": {"zh": "API Key 环境变量名", "en": "API Key Env Var"},
     "api_key_env_optional": {
         "zh": "API Key 环境变量名（可留空）",
@@ -259,6 +265,38 @@ def _parse_terms(raw: str) -> list[str]:
     return [x.strip() for x in normalized.splitlines() if x.strip()]
 
 
+@st.cache_data(show_spinner=False, ttl=15)
+def _fetch_ollama_models(base_url: str) -> list[str]:
+    normalized = base_url.strip().rstrip("/") or "http://127.0.0.1:11434"
+    url = f"{normalized}/api/tags"
+    with httpx.Client(timeout=4) as client:
+        response = client.get(url)
+        response.raise_for_status()
+        payload = response.json()
+    models = payload.get("models", [])
+    names = sorted(
+        {
+            str(item.get("name", "")).strip()
+            for item in models
+            if isinstance(item, dict) and str(item.get("name", "")).strip()
+        }
+    )
+    return names
+
+
+def _select_default_ollama_embedding(models: list[str]) -> str:
+    if not models:
+        return ""
+    candidates = [
+        name
+        for name in models
+        if any(token in name.lower() for token in ("embed", "embedding", "nomic", "bge", "e5"))
+    ]
+    if candidates:
+        return candidates[0]
+    return models[0]
+
+
 def _load_base_settings() -> Settings:
     if DEFAULT_SETTINGS_PATH.exists():
         return load_settings(DEFAULT_SETTINGS_PATH)
@@ -311,6 +349,9 @@ def _resolve_api_key_requirement(provider: str) -> tuple[str, bool]:
 def _build_runtime_model_config(base_settings: Settings) -> tuple[ModelConfig, bool, bool, bool]:
     provider = _normalize_provider(str(st.session_state.get("model_provider", "openai")))
     api_key_env, require_api_key = _resolve_api_key_requirement(provider)
+    base_url_value = str(st.session_state.get("model_base_url", "")).strip()
+    if provider == "ollama" and not base_url_value:
+        base_url_value = "http://127.0.0.1:11434"
     api_key_exists = bool(os.getenv(api_key_env, ""))
     provider_requires_key = provider == "openai" or (require_api_key and provider != "ollama")
     enabled_requested = bool(st.session_state.get("model_enabled", False))
@@ -324,7 +365,7 @@ def _build_runtime_model_config(base_settings: Settings) -> tuple[ModelConfig, b
         base_settings.model,
         enabled=chat_ready,
         provider=provider,
-        base_url=str(st.session_state.get("model_base_url", "")).strip(),
+        base_url=base_url_value,
         api_key_env=api_key_env,
         model=str(st.session_state.get("model_name", "")).strip(),
         embedding_model=str(st.session_state.get("model_embedding", "")).strip(),
@@ -520,8 +561,7 @@ _ensure_search_state(lang)
 _drain_search_events(lang)
 
 st.markdown(
-    f'<div class="hero-card"><h2>{t(lang, "hero_title")}</h2>'
-    f'<p>{t(lang, "hero_desc")}</p></div>',
+    f'<div class="hero-card"><h2>{t(lang, "hero_title")}</h2></div>',
     unsafe_allow_html=True,
 )
 
@@ -618,9 +658,10 @@ with st.sidebar:
         )
         provider_for_ui = _normalize_provider(str(st.session_state.get("model_provider", "openai")))
         st.text_input(t(lang, "base_url"), key="model_base_url")
-        st.text_input(t(lang, "model_name"), key="model_name")
+        ollama_models: list[str] = []
 
         if provider_for_ui == "openai":
+            st.text_input(t(lang, "model_name"), key="model_name")
             st.text_input(t(lang, "api_key_env"), key="model_api_key_env")
             api_env_name, _ = _resolve_api_key_requirement(provider_for_ui)
             api_key_exists = bool(os.getenv(api_env_name, ""))
@@ -628,6 +669,7 @@ with st.sidebar:
             st.caption(f"{t(lang, 'api_key_status')}: {api_status}")
             st.caption(t(lang, "api_key_help"))
         elif provider_for_ui == "openai_compatible":
+            st.text_input(t(lang, "model_name"), key="model_name")
             st.text_input(t(lang, "api_key_env_optional"), key="model_api_key_env")
             api_env_name, requires_key = _resolve_api_key_requirement(provider_for_ui)
             if requires_key:
@@ -637,15 +679,47 @@ with st.sidebar:
                 st.caption(t(lang, "api_key_help"))
         else:
             st.session_state["model_api_key_env"] = ""
+            st.session_state["model_require_api_key"] = False
+            base_url_for_ollama = str(st.session_state.get("model_base_url", "")).strip() or "http://127.0.0.1:11434"
+            try:
+                ollama_models = _fetch_ollama_models(base_url_for_ollama)
+            except Exception:
+                st.caption(t(lang, "ollama_models_error"))
+                ollama_models = []
+            if ollama_models:
+                current_model = str(st.session_state.get("model_name", "")).strip()
+                if current_model not in ollama_models:
+                    st.session_state["model_name"] = ollama_models[0]
+                st.selectbox(t(lang, "model_name_auto"), options=ollama_models, key="model_name")
+            else:
+                st.caption(t(lang, "ollama_models_empty"))
+                st.text_input(t(lang, "model_name"), key="model_name")
 
-        runtime_model_preview, _, _, _ = _build_runtime_model_config(base_settings)
         st.subheader(t(lang, "semantic"))
         semantic_on = st.checkbox(
             t(lang, "semantic_on"),
             key="semantic_on",
         )
         if semantic_on:
-            st.text_input(t(lang, "embedding_model_name"), key="model_embedding")
+            if provider_for_ui == "ollama" and ollama_models:
+                embedding_options = [
+                    name
+                    for name in ollama_models
+                    if any(token in name.lower() for token in ("embed", "embedding", "nomic", "bge", "e5"))
+                ]
+                if not embedding_options:
+                    embedding_options = ollama_models
+                current_embedding = str(st.session_state.get("model_embedding", "")).strip()
+                if current_embedding not in embedding_options:
+                    st.session_state["model_embedding"] = _select_default_ollama_embedding(embedding_options)
+                st.selectbox(
+                    t(lang, "embedding_model_auto"),
+                    options=embedding_options,
+                    key="model_embedding",
+                )
+            else:
+                st.text_input(t(lang, "embedding_model_name"), key="model_embedding")
+            runtime_model_preview, _, _, _ = _build_runtime_model_config(base_settings)
             semantic_ready = bool(runtime_model_preview.enabled and str(st.session_state.get("model_embedding", "")).strip())
             if not semantic_ready:
                 st.caption(t(lang, "semantic_offline_hint"))
