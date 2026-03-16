@@ -155,6 +155,9 @@ arxiv-agent search --last 6m -p llm-agent -k 20
 arxiv-agent search --last 1y -p rag -k 20
 arxiv-agent search --last 2w -k 15
 arxiv-agent search --last 3m -k 10 --summary-lang en
+
+# 高级：按分类覆盖抓取上限（可重复）
+arxiv-agent search --last 6m -k 20 --category-cap cs.LG=1200 --category-cap cs.AI=800
 ```
 
 ### 配置文件
@@ -353,6 +356,9 @@ arxiv-agent search --last 6m -p llm-agent -k 20
 arxiv-agent search --last 1y -p rag -k 20
 arxiv-agent search --last 2w -k 15
 arxiv-agent search --last 3m -k 10 --summary-lang en
+
+# Advanced: per-category fetch cap override (repeatable)
+arxiv-agent search --last 6m -k 20 --category-cap cs.LG=1200 --category-cap cs.AI=800
 ```
 
 ### Config Files

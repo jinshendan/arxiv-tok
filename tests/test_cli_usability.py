@@ -4,6 +4,7 @@ import pytest
 import typer
 
 from arxiv_agent.cli import (
+    _parse_category_cap_overrides,
     _parse_last_window,
     _resolve_keywords_path,
     _resolve_settings_path,
@@ -41,3 +42,25 @@ def test_resolve_keywords_from_env(tmp_path: Path, monkeypatch: pytest.MonkeyPat
 
     resolved = _resolve_keywords_path(None)
     assert resolved == p
+
+
+def test_parse_category_cap_overrides_ok() -> None:
+    caps = _parse_category_cap_overrides(
+        ["cs.LG=1200", "cs.AI=800"],
+        allowed_categories=["cs.AI", "cs.LG", "cs.CL"],
+    )
+    assert caps == {"cs.LG": 1200, "cs.AI": 800}
+
+
+@pytest.mark.parametrize(
+    ("entries", "allowed"),
+    [
+        (["cs.LG"], ["cs.LG"]),  # missing '='
+        (["cs.LG=abc"], ["cs.LG"]),  # non-int
+        (["cs.LG=0"], ["cs.LG"]),  # non-positive
+        (["math.PR=100"], ["cs.LG"]),  # unknown category
+    ],
+)
+def test_parse_category_cap_overrides_invalid(entries: list[str], allowed: list[str]) -> None:
+    with pytest.raises(typer.BadParameter):
+        _parse_category_cap_overrides(entries, allowed_categories=allowed)

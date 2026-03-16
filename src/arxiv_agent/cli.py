@@ -82,6 +82,35 @@ def _parse_last_window(last: str) -> tuple[int, int, float]:
     return 0, 0, float(value)
 
 
+def _parse_category_cap_overrides(
+    entries: list[str],
+    *,
+    allowed_categories: list[str],
+) -> dict[str, int]:
+    if not entries:
+        return {}
+    allowed = set(allowed_categories)
+    overrides: dict[str, int] = {}
+    for raw in entries:
+        item = raw.strip()
+        if "=" not in item:
+            raise typer.BadParameter(f"Invalid --category-cap '{raw}'. Use category=number, e.g. cs.LG=1200")
+        category, value = item.split("=", 1)
+        cat = category.strip()
+        if cat not in allowed:
+            raise typer.BadParameter(
+                f"Unknown category '{cat}' in --category-cap. It must exist in keywords categories."
+            )
+        try:
+            cap = int(value.strip())
+        except ValueError as e:
+            raise typer.BadParameter(f"Invalid cap '{value}' for category '{cat}'. Must be an integer.") from e
+        if cap < 1:
+            raise typer.BadParameter(f"Invalid cap '{cap}' for category '{cat}'. Must be >= 1.")
+        overrides[cat] = cap
+    return overrides
+
+
 @app.command("init-db")
 def init_db(
     settings: Path | None = typer.Option(
@@ -191,6 +220,11 @@ def search(
         max=5000,
         help="Fetch limit per arXiv category for this search",
     ),
+    category_cap: list[str] = typer.Option(
+        None,
+        "--category-cap",
+        help="Per-category fetch cap override, format category=cap (repeatable)",
+    ),
     summary_lang: str = typer.Option(
         "zh",
         "--summary-lang",
@@ -207,6 +241,10 @@ def search(
         if days != 0 or months != 0 or years != 0.0:
             raise typer.BadParameter("Use either --last or --days/--months/--years, not both.")
         resolved_days, resolved_months, resolved_years = _parse_last_window(last)
+    category_cap_overrides = _parse_category_cap_overrides(
+        category_cap or [],
+        allowed_categories=r.categories,
+    )
 
     try:
         result = run_search(
@@ -218,6 +256,7 @@ def search(
             profile_names=profile,
             top_k=top_k,
             max_results_per_category=max_results_per_category,
+            category_max_results=category_cap_overrides or None,
             summary_language=summary_lang,
         )
     except ValueError as e:

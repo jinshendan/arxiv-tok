@@ -22,7 +22,7 @@ def _sample_paper() -> Paper:
 def test_run_search_respects_stop_signal(monkeypatch) -> None:
     monkeypatch.setattr(
         "arxiv_agent.arxiv_client.ArxivClient.fetch_recent",
-        lambda self, categories, max_results_per_category, lookback_hours, page_size, should_stop, progress_callback: [
+        lambda self, categories, max_results_per_category, lookback_hours, page_size, should_stop, progress_callback, category_max_results=None: [
             _sample_paper()
         ],
     )
@@ -62,7 +62,7 @@ def test_run_search_passes_summary_language(monkeypatch) -> None:
     called: dict[str, str] = {}
     monkeypatch.setattr(
         "arxiv_agent.arxiv_client.ArxivClient.fetch_recent",
-        lambda self, categories, max_results_per_category, lookback_hours, page_size, should_stop, progress_callback: [
+        lambda self, categories, max_results_per_category, lookback_hours, page_size, should_stop, progress_callback, category_max_results=None: [
             _sample_paper()
         ],
     )
@@ -94,3 +94,48 @@ def test_run_search_passes_summary_language(monkeypatch) -> None:
     assert result.stopped is False
     assert result.matched == 1
     assert called["lang"] == "en"
+
+
+def test_run_search_passes_category_caps(monkeypatch) -> None:
+    called: dict[str, dict[str, int] | None] = {}
+
+    def fake_fetch_recent(
+        self,
+        categories,
+        max_results_per_category,
+        lookback_hours,
+        page_size,
+        should_stop,
+        progress_callback,
+        category_max_results=None,
+    ):
+        called["caps"] = category_max_results
+        return [_sample_paper()]
+
+    monkeypatch.setattr("arxiv_agent.arxiv_client.ArxivClient.fetch_recent", fake_fetch_recent)
+    monkeypatch.setattr(
+        "arxiv_agent.semantic.SemanticMatcher.score_papers",
+        lambda self, papers, semantic_queries: {},
+    )
+    monkeypatch.setattr(
+        "arxiv_agent.summarizer.Summarizer.summarize",
+        lambda self, paper, output_language="zh": SummaryResult(
+            summary_cn="x",
+            highlights=["h1", "h2", "h3"],
+            recommendation="Optional",
+        ),
+    )
+
+    settings = Settings()
+    rules = KeywordRules(
+        categories=["cs.AI", "cs.LG"],
+        profiles=[KeywordProfile(name="p1", include_any=["agent"], max_items_per_run=5)],
+    )
+    run_search(
+        settings,
+        rules,
+        top_k=5,
+        max_results_per_category=50,
+        category_max_results={"cs.LG": 120},
+    )
+    assert called["caps"] == {"cs.LG": 120}

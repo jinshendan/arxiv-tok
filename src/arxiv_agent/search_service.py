@@ -93,6 +93,7 @@ def run_search(
     profile_names: list[str] | None = None,
     top_k: int = 10,
     max_results_per_category: int = 600,
+    category_max_results: dict[str, int] | None = None,
     progress_callback: Callable[[str, float], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
     language: str = "zh",
@@ -156,6 +157,7 @@ def run_search(
     papers = client.fetch_recent(
         categories=rules.categories,
         max_results_per_category=max_results_per_category,
+        category_max_results=category_max_results,
         lookback_hours=lookback_hours,
         page_size=settings.arxiv_page_size,
         should_stop=should_stop,

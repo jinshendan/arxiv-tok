@@ -30,6 +30,7 @@ class ArxivClient:
         categories: list[str],
         max_results_per_category: int,
         lookback_hours: int,
+        category_max_results: dict[str, int] | None = None,
         page_size: int = 200,
         should_stop: Callable[[], bool] | None = None,
         progress_callback: Callable[[dict], None] | None = None,
@@ -47,6 +48,7 @@ class ArxivClient:
                 category = cat.strip()
                 if not category:
                     continue
+                this_category_max = max(1, int((category_max_results or {}).get(category, max_results_per_category)))
 
                 start = 0
                 reached_cutoff = False
@@ -59,14 +61,14 @@ class ArxivClient:
                             "category_total": total_categories,
                             "fetched": len(papers),
                             "start": start,
-                            "max_results_per_category": max_results_per_category,
+                            "max_results_per_category": this_category_max,
                         }
                     )
-                while start < max_results_per_category and not reached_cutoff:
+                while start < this_category_max and not reached_cutoff:
                     if should_stop and should_stop():
                         reached_cutoff = True
                         break
-                    batch_size = min(page_size, max_results_per_category - start)
+                    batch_size = min(page_size, this_category_max - start)
                     url = self._build_query_url(category=category, start=start, max_results=batch_size)
                     response = self._request_with_retry(client, url, should_stop=should_stop)
                     if response is None:
@@ -98,7 +100,7 @@ class ArxivClient:
                                 "category_total": total_categories,
                                 "fetched": len(papers),
                                 "start": start,
-                                "max_results_per_category": max_results_per_category,
+                                "max_results_per_category": this_category_max,
                             }
                         )
                     if len(feed.entries) < batch_size:
@@ -113,8 +115,8 @@ class ArxivClient:
                             "category_total": total_categories,
                             "fetched": len(papers),
                             "start": start,
-                            "max_results_per_category": max_results_per_category,
-                            "hit_fetch_cap": bool(start >= max_results_per_category and not reached_cutoff),
+                            "max_results_per_category": this_category_max,
+                            "hit_fetch_cap": bool(start >= this_category_max and not reached_cutoff),
                         }
                     )
 

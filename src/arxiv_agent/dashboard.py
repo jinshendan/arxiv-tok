@@ -149,6 +149,15 @@ TEXT = {
     "result_size": {"zh": "结果数量", "en": "Result Size"},
     "top_k": {"zh": "每次返回 top_k", "en": "top_k per search"},
     "max_fetch": {"zh": "每个分类抓取上限", "en": "Fetch cap per category"},
+    "category_cap_advanced": {"zh": "按分类自定义抓取上限（高级）", "en": "Per-category fetch cap (advanced)"},
+    "category_cap_rules": {
+        "zh": "分类上限覆盖（每行: 分类=上限），例如:\ncs.LG=1200\ncs.AI=800",
+        "en": "Per-category cap overrides (one per line: category=cap), e.g.\ncs.LG=1200\ncs.AI=800",
+    },
+    "category_cap_invalid": {
+        "zh": "分类抓取上限配置无效: {error}",
+        "en": "Invalid per-category cap config: {error}",
+    },
     "max_fetch_tip": {
         "zh": "提示：这个值越大，请求越多，更容易触发 arXiv 限流。建议先从 200-400 开始。",
         "en": "Tip: larger values make more requests and may hit arXiv rate limits. Start with 200-400.",
@@ -270,6 +279,31 @@ def _provider_label(lang: str, provider: str) -> str:
 def _parse_terms(raw: str) -> list[str]:
     normalized = raw.replace(",", "\n")
     return [x.strip() for x in normalized.splitlines() if x.strip()]
+
+
+def _parse_category_caps(raw: str, allowed_categories: list[str]) -> dict[str, int]:
+    if not raw.strip():
+        return {}
+    allowed = set(allowed_categories)
+    out: dict[str, int] = {}
+    for idx, line in enumerate(raw.splitlines(), start=1):
+        row = line.strip()
+        if not row:
+            continue
+        if "=" not in row:
+            raise ValueError(f"line {idx}: expected category=cap")
+        category, value = row.split("=", 1)
+        cat = category.strip()
+        if cat not in allowed:
+            raise ValueError(f"line {idx}: unknown category '{cat}'")
+        try:
+            cap = int(value.strip())
+        except ValueError as e:
+            raise ValueError(f"line {idx}: cap must be an integer") from e
+        if cap < 1:
+            raise ValueError(f"line {idx}: cap must be >= 1")
+        out[cat] = cap
+    return out
 
 
 @st.cache_data(show_spinner=False, ttl=15)
@@ -433,6 +467,7 @@ def _start_search_job(
     years: float,
     top_k: int,
     max_results_per_category: int,
+    category_max_results: dict[str, int] | None,
     language: str,
     summary_language: str,
 ) -> None:
@@ -453,6 +488,7 @@ def _start_search_job(
                 profile_names=["custom-search"],
                 top_k=top_k,
                 max_results_per_category=max_results_per_category,
+                category_max_results=category_max_results,
                 progress_callback=on_progress,
                 should_stop=stop_event.is_set,
                 language=language,
@@ -757,6 +793,13 @@ with st.sidebar:
     st.subheader(t(lang, "result_size"))
     top_k = st.slider(t(lang, "top_k"), min_value=1, max_value=100, value=15)
     max_results = st.slider(t(lang, "max_fetch"), min_value=50, max_value=2000, value=300, step=50)
+    use_category_cap_advanced = st.checkbox(t(lang, "category_cap_advanced"), value=False)
+    category_cap_rules_raw = ""
+    if use_category_cap_advanced:
+        category_cap_rules_raw = st.text_area(
+            t(lang, "category_cap_rules"),
+            value="",
+        )
     st.caption(t(lang, "max_fetch_tip"))
 
     run = st.button(
@@ -817,6 +860,12 @@ if run:
         st.warning(t(lang, "no_categories"))
         st.stop()
 
+    try:
+        category_max_results = _parse_category_caps(category_cap_rules_raw, categories)
+    except ValueError as e:
+        st.warning(t(lang, "category_cap_invalid", error=str(e)))
+        st.stop()
+
     custom_profile = KeywordProfile(
         name="custom-search",
         include_all=include_all,
@@ -839,6 +888,7 @@ if run:
         years=y,
         top_k=int(top_k),
         max_results_per_category=int(max_results),
+        category_max_results=category_max_results or None,
         language=lang,
         summary_language=summary_language,
     )
