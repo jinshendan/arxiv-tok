@@ -21,6 +21,44 @@ class SearchResult:
     stopped: bool = False
 
 
+_PROGRESS_MESSAGES = {
+    "start": {
+        "zh": "准备开始搜索...",
+        "en": "Preparing search...",
+    },
+    "fetching": {
+        "zh": "抓取中: {category} ({idx}/{total}), fetched {fetched}",
+        "en": "Fetching: {category} ({idx}/{total}), fetched {fetched}",
+    },
+    "fetched_done": {
+        "zh": "抓取完成，共 {count} 篇，开始过滤...",
+        "en": "Fetch complete: {count} papers, now filtering...",
+    },
+    "filtered": {
+        "zh": "过滤完成: {profile} ({idx}/{total}), 命中 {count}",
+        "en": "Filtered: {profile} ({idx}/{total}), matched {count}",
+    },
+    "summarizing": {
+        "zh": "总结中: {profile} ({done}/{total})",
+        "en": "Summarizing: {profile} ({done}/{total})",
+    },
+    "done_empty": {
+        "zh": "已完成搜索。",
+        "en": "Search completed.",
+    },
+    "done_with_count": {
+        "zh": "已完成搜索，返回 {count} 条结果。",
+        "en": "Search completed, returning {count} results.",
+    },
+}
+
+
+def _msg(lang: str, key: str, **kwargs) -> str:
+    lang_key = "en" if lang.lower().startswith("en") else "zh"
+    template = _PROGRESS_MESSAGES[key][lang_key]
+    return template.format(**kwargs)
+
+
 def resolve_lookback_hours(default_hours: int, days: int, months: int, years: float) -> int:
     if days < 0 or months < 0 or years < 0:
         raise ValueError("days/months/years must be non-negative")
@@ -43,6 +81,7 @@ def run_search(
     max_results_per_category: int = 600,
     progress_callback: Callable[[str, float], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
+    language: str = "zh",
 ) -> SearchResult:
     if not rules.profiles:
         raise ValueError("No profiles found in keyword rules")
@@ -62,7 +101,7 @@ def run_search(
         if progress_callback:
             progress_callback(message, max(0.0, min(1.0, progress)))
 
-    emit("准备开始搜索...", 0.02)
+    emit(_msg(language, "start"), 0.02)
 
     client = ArxivClient(
         user_agent=settings.user_agent,
@@ -81,7 +120,14 @@ def run_search(
         category_fraction = min(1.0, start / max(1, max_per_cat))
         overall_fraction = ((category_index - 1) + category_fraction) / num_categories
         emit(
-            f"抓取中: {category} ({category_index}/{num_categories})，已抓取 {fetched} 篇",
+            _msg(
+                language,
+                "fetching",
+                category=category,
+                idx=category_index,
+                total=num_categories,
+                fetched=fetched,
+            ),
             0.05 + 0.55 * overall_fraction,
         )
 
@@ -95,7 +141,7 @@ def run_search(
     )
     if should_stop and should_stop():
         stopped = True
-    emit(f"抓取完成，共 {len(papers)} 篇，开始过滤...", 0.62)
+    emit(_msg(language, "fetched_done", count=len(papers)), 0.62)
 
     summarizer = Summarizer(settings.openai)
     semantic_matcher = SemanticMatcher(settings.openai)
@@ -110,7 +156,14 @@ def run_search(
         ranked = filter_and_rank(papers, profile_for_search, semantic_scores=semantic_scores)
         ranked_by_profile.append((profile_for_search.name, ranked))
         emit(
-            f"过滤完成: {profile_for_search.name} ({idx}/{len(selected_profiles)})，命中 {len(ranked)} 篇",
+            _msg(
+                language,
+                "filtered",
+                profile=profile_for_search.name,
+                idx=idx,
+                total=len(selected_profiles),
+                count=len(ranked),
+            ),
             0.65,
         )
 
@@ -130,14 +183,20 @@ def run_search(
             summarized += 1
             tail_progress = summarized / max(1, total_to_summarize)
             emit(
-                f"总结中: {profile_name} ({summarized}/{max(1, total_to_summarize)})",
+                _msg(
+                    language,
+                    "summarizing",
+                    profile=profile_name,
+                    done=summarized,
+                    total=max(1, total_to_summarize),
+                ),
                 0.65 + 0.35 * tail_progress,
             )
 
     if not items:
-        emit("已完成搜索。", 1.0)
+        emit(_msg(language, "done_empty"), 1.0)
     else:
-        emit(f"已完成搜索，返回 {len(items)} 条结果。", 1.0)
+        emit(_msg(language, "done_with_count", count=len(items)), 1.0)
 
     return SearchResult(
         lookback_hours=lookback_hours,
