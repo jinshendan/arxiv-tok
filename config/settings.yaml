@@ -1,0 +1,33 @@
+database_path: data/arxiv_agent.db
+lookback_hours: 30
+max_results_per_category: 120
+request_timeout_seconds: 30
+user_agent: arxiv-agent/0.1 (mailto:your_email@example.com)
+
+openai:
+  enabled: false
+  api_key_env: OPENAI_API_KEY
+  model: gpt-5-mini
+  timeout_seconds: 60
+
+notify:
+  console: true
+  email:
+    enabled: false
+    smtp_host: smtp.gmail.com
+    smtp_port: 587
+    username: your_account@gmail.com
+    password_env: SMTP_PASSWORD
+    from_addr: your_account@gmail.com
+    to_addrs:
+      - your_account@gmail.com
+    use_tls: true
+  telegram:
+    enabled: false
+    bot_token_env: TELEGRAM_BOT_TOKEN
+    chat_id: ""
+
+schedule:
+  timezone: Europe/Paris
+  hour: 8
+  minute: 0

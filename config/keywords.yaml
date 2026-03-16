@@ -1,0 +1,31 @@
+categories:
+  - cs.LG
+  - cs.CL
+  - cs.AI
+
+profiles:
+  - name: llm-agent
+    include_all:
+      - agent
+    include_any:
+      - llm
+      - language model
+      - reasoning
+      - tool use
+      - function calling
+    exclude_any:
+      - survey
+    min_score: 3
+    max_items_per_run: 10
+
+  - name: rag
+    include_all: []
+    include_any:
+      - retrieval-augmented generation
+      - rag
+      - dense retrieval
+      - reranker
+      - vector database
+    exclude_any: []
+    min_score: 1
+    max_items_per_run: 8
