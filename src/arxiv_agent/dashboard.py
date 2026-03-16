@@ -91,11 +91,11 @@ def _load_base_settings() -> Settings:
     return Settings()
 
 
-def _build_window(mode: str, value: float) -> tuple[int, int, float]:
+def _build_window(mode: str, value: int) -> tuple[int, int, float]:
     if mode == "days":
-        return int(value), 0, 0.0
+        return value, 0, 0.0
     if mode == "months":
-        return 0, int(value), 0.0
+        return 0, value, 0.0
     return 0, 0, float(value)
 
 
@@ -146,10 +146,10 @@ with st.sidebar:
         index=1,
         format_func=lambda x: {"days": "天", "months": "月", "years": "年"}[x],
     )
-    max_value = 3650.0 if window_mode == "days" else 120.0 if window_mode == "months" else 10.0
-    default_value = 30.0 if window_mode == "days" else 1.0 if window_mode == "months" else 1.0
+    max_value = 3650 if window_mode == "days" else 120 if window_mode == "months" else 10
+    default_value = 30 if window_mode == "days" else 1
     window_value = st.number_input(
-        "窗口数值", min_value=1.0, max_value=max_value, value=default_value, step=1.0
+        "窗口数值（整数）", min_value=1, max_value=max_value, value=default_value, step=1
     )
 
     st.subheader("搜索范围")
