@@ -113,15 +113,26 @@ TEXT = {
     "exclude_any": {"zh": "排除关键词 exclude_any（可选）", "en": "exclude_any (optional)"},
     "model_section": {"zh": "模型与总结", "en": "Model & Summary"},
     "model_on": {"zh": "启用 LLM 总结", "en": "Enable LLM Summarization"},
+    "model_off_hint": {
+        "zh": "当前关闭 LLM，总结将使用本地兜底版本。",
+        "en": "LLM is off. Summaries will use local fallback mode.",
+    },
     "model_provider": {"zh": "模型提供方", "en": "Model Provider"},
     "base_url": {"zh": "Base URL", "en": "Base URL"},
     "model_name": {"zh": "聊天模型名", "en": "Chat Model Name"},
     "embedding_model_name": {"zh": "Embedding 模型名", "en": "Embedding Model Name"},
     "api_key_env": {"zh": "API Key 环境变量名", "en": "API Key Env Var"},
-    "require_api_key": {"zh": "要求 API Key", "en": "Require API Key"},
+    "api_key_env_optional": {
+        "zh": "API Key 环境变量名（可留空）",
+        "en": "API Key Env Var (optional)",
+    },
     "api_key_status": {"zh": "API Key 状态", "en": "API Key Status"},
     "api_key_found": {"zh": "已检测到", "en": "Detected"},
     "api_key_missing": {"zh": "未检测到", "en": "Not detected"},
+    "api_key_help": {
+        "zh": "API Key 是模型平台提供的访问凭证（类似密码），用于调用在线模型接口。",
+        "en": "API key is your access credential for calling online model APIs.",
+    },
     "summary_language": {"zh": "总结语言", "en": "Summary Language"},
     "semantic": {"zh": "语义匹配", "en": "Semantic Matching"},
     "semantic_on": {"zh": "启用语义匹配（模型 API）", "en": "Enable semantic matching (Model API)"},
@@ -153,6 +164,10 @@ TEXT = {
     "semantic_offline_hint": {
         "zh": "已关闭语义匹配：当前设置无法调用 embedding。",
         "en": "Semantic matching disabled: embedding is not available with current model settings.",
+    },
+    "semantic_off_hint": {
+        "zh": "语义匹配已关闭，仅使用关键词匹配。",
+        "en": "Semantic matching is off. Keyword matching only.",
     },
     "no_categories": {
         "zh": "请至少选择一个方向，或填写一个有效分类。",
@@ -275,14 +290,27 @@ def _ensure_model_state(base_settings: Settings) -> None:
     st.session_state.setdefault("model_embedding", cfg.embedding_model)
     st.session_state.setdefault("model_require_api_key", bool(cfg.require_api_key))
     st.session_state.setdefault("summary_language", "zh")
+    st.session_state.setdefault("semantic_on", bool(cfg.enabled and cfg.embedding_model))
+
+
+def _resolve_api_key_requirement(provider: str) -> tuple[str, bool]:
+    raw_env = str(st.session_state.get("model_api_key_env", "")).strip()
+    if provider == "openai":
+        return raw_env or "OPENAI_API_KEY", True
+    if provider == "ollama":
+        return "", False
+    # openai_compatible:
+    # - if env var is empty, treat endpoint as no-key mode
+    # - otherwise follow stored require flag for backward compatibility
+    if not raw_env:
+        return "", False
+    require_flag = bool(st.session_state.get("model_require_api_key", True))
+    return raw_env, require_flag
 
 
 def _build_runtime_model_config(base_settings: Settings) -> tuple[ModelConfig, bool, bool, bool]:
     provider = _normalize_provider(str(st.session_state.get("model_provider", "openai")))
-    api_key_env = str(st.session_state.get("model_api_key_env", "OPENAI_API_KEY")).strip() or "OPENAI_API_KEY"
-    require_api_key = bool(st.session_state.get("model_require_api_key", True))
-    if provider == "openai":
-        require_api_key = True
+    api_key_env, require_api_key = _resolve_api_key_requirement(provider)
     api_key_exists = bool(os.getenv(api_key_env, ""))
     provider_requires_key = provider == "openai" or (require_api_key and provider != "ollama")
     enabled_requested = bool(st.session_state.get("model_enabled", False))
@@ -569,24 +597,9 @@ with st.sidebar:
     exclude_any_raw = st.text_area(t(lang, "exclude_any"), value="survey")
 
     st.subheader(t(lang, "model_section"))
-    st.checkbox(
+    model_enabled = st.checkbox(
         t(lang, "model_on"),
         key="model_enabled",
-    )
-    st.selectbox(
-        t(lang, "model_provider"),
-        options=MODEL_PROVIDER_OPTIONS,
-        format_func=lambda x: _provider_label(lang, x),
-        key="model_provider",
-    )
-    st.text_input(t(lang, "base_url"), key="model_base_url")
-    st.text_input(t(lang, "model_name"), key="model_name")
-    st.text_input(t(lang, "embedding_model_name"), key="model_embedding")
-    st.text_input(t(lang, "api_key_env"), key="model_api_key_env")
-    st.checkbox(
-        t(lang, "require_api_key"),
-        key="model_require_api_key",
-        disabled=str(st.session_state.get("model_provider", "openai")).strip().lower() == "openai",
     )
     st.selectbox(
         t(lang, "summary_language"),
@@ -595,26 +608,56 @@ with st.sidebar:
         key="summary_language",
     )
 
-    runtime_model_preview, provider_requires_key, api_key_exists, embedding_ready = _build_runtime_model_config(
-        base_settings
-    )
-    api_status = t(lang, "api_key_found") if api_key_exists else t(lang, "api_key_missing")
-    st.caption(f"{t(lang, 'api_key_status')}: {api_status}")
+    semantic_queries_raw = ""
+    if model_enabled:
+        st.selectbox(
+            t(lang, "model_provider"),
+            options=MODEL_PROVIDER_OPTIONS,
+            format_func=lambda x: _provider_label(lang, x),
+            key="model_provider",
+        )
+        provider_for_ui = _normalize_provider(str(st.session_state.get("model_provider", "openai")))
+        st.text_input(t(lang, "base_url"), key="model_base_url")
+        st.text_input(t(lang, "model_name"), key="model_name")
 
-    st.subheader(t(lang, "semantic"))
-    st.session_state.setdefault("semantic_on", bool(runtime_model_preview.enabled and embedding_ready))
-    semantic_on = st.checkbox(
-        t(lang, "semantic_on"),
-        key="semantic_on",
-    )
-    semantic_ready = bool(runtime_model_preview.enabled and embedding_ready)
-    if semantic_on and not semantic_ready:
-        st.caption(t(lang, "semantic_offline_hint"))
-    semantic_queries_raw = st.text_area(
-        t(lang, "semantic_queries"),
-        value="multi-agent tool use\n跨语言检索增强生成",
-        disabled=not (semantic_on and semantic_ready),
-    )
+        if provider_for_ui == "openai":
+            st.text_input(t(lang, "api_key_env"), key="model_api_key_env")
+            api_env_name, _ = _resolve_api_key_requirement(provider_for_ui)
+            api_key_exists = bool(os.getenv(api_env_name, ""))
+            api_status = t(lang, "api_key_found") if api_key_exists else t(lang, "api_key_missing")
+            st.caption(f"{t(lang, 'api_key_status')}: {api_status}")
+            st.caption(t(lang, "api_key_help"))
+        elif provider_for_ui == "openai_compatible":
+            st.text_input(t(lang, "api_key_env_optional"), key="model_api_key_env")
+            api_env_name, requires_key = _resolve_api_key_requirement(provider_for_ui)
+            if requires_key:
+                api_key_exists = bool(os.getenv(api_env_name, ""))
+                api_status = t(lang, "api_key_found") if api_key_exists else t(lang, "api_key_missing")
+                st.caption(f"{t(lang, 'api_key_status')}: {api_status}")
+                st.caption(t(lang, "api_key_help"))
+        else:
+            st.session_state["model_api_key_env"] = ""
+
+        runtime_model_preview, _, _, _ = _build_runtime_model_config(base_settings)
+        st.subheader(t(lang, "semantic"))
+        semantic_on = st.checkbox(
+            t(lang, "semantic_on"),
+            key="semantic_on",
+        )
+        if semantic_on:
+            st.text_input(t(lang, "embedding_model_name"), key="model_embedding")
+            semantic_ready = bool(runtime_model_preview.enabled and str(st.session_state.get("model_embedding", "")).strip())
+            if not semantic_ready:
+                st.caption(t(lang, "semantic_offline_hint"))
+            semantic_queries_raw = st.text_area(
+                t(lang, "semantic_queries"),
+                value="multi-agent tool use\n跨语言检索增强生成",
+            )
+        else:
+            st.caption(t(lang, "semantic_off_hint"))
+    else:
+        st.session_state["semantic_on"] = False
+        st.caption(t(lang, "model_off_hint"))
 
     st.subheader(t(lang, "result_size"))
     top_k = st.slider(t(lang, "top_k"), min_value=1, max_value=100, value=15)
