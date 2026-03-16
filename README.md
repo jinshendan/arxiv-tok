@@ -179,6 +179,6 @@ cp config/keywords.yaml config/keywords.local.yaml
 └── README.md
 ```
 
-## 许可
+## 许可证
 
-如需开源发布，建议补充 `LICENSE` 文件（例如 MIT）。
+本项目采用 [MIT License](LICENSE) 开源发布。
