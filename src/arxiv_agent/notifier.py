@@ -14,14 +14,20 @@ class Notifier:
     def __init__(self, config: NotifyConfig) -> None:
         self.config = config
 
-    def format_digest(self, items: list[tuple[ScoredPaper, SummaryResult]]) -> str:
-        lines = ["arXiv 每日监控结果", ""]
+    def format_digest(
+        self,
+        items: list[tuple[ScoredPaper, SummaryResult]],
+        title: str = "arXiv 每日监控结果",
+        empty_message: str = "今日无命中关键词的新论文。",
+    ) -> str:
+        lines = [title, ""]
         for idx, (scored, summary) in enumerate(items, start=1):
             p = scored.paper
             lines.extend(
                 [
                     f"{idx}. [{scored.profile_name}] {p.title}",
                     f"   Score: {scored.score}",
+                    f"   Semantic: {scored.semantic_similarity:.3f}" if scored.semantic_similarity is not None else "   Semantic: N/A",
                     f"   URL: {p.url}",
                     f"   摘要: {summary.summary_cn}",
                     f"   要点: {' | '.join(summary.highlights)}",
@@ -30,7 +36,7 @@ class Notifier:
                 ]
             )
         if len(lines) == 2:
-            lines.append("今日无命中关键词的新论文。")
+            lines.append(empty_message)
         return "\n".join(lines)
 
     def send(self, message: str) -> list[str]:

@@ -21,40 +21,65 @@ class ArxivClient:
         categories: list[str],
         max_results_per_category: int,
         lookback_hours: int,
+        page_size: int = 100,
     ) -> list[Paper]:
         cutoff = datetime.now(UTC) - timedelta(hours=lookback_hours)
         papers: dict[str, Paper] = {}
-
-        for cat in categories:
-            query = f"cat:{cat.strip()}"
-            url = (
-                "https://export.arxiv.org/api/query?"
-                f"search_query={quote_plus(query)}"
-                f"&start=0&max_results={max_results_per_category}"
-                "&sortBy=submittedDate&sortOrder=descending"
-            )
-            headers = {"User-Agent": self.user_agent}
-            with httpx.Client(timeout=self.timeout_seconds, headers=headers) as client:
-                response = client.get(url)
-                response.raise_for_status()
-
-            feed = feedparser.parse(response.text)
-            for entry in feed.entries:
-                published = datetime(*entry.published_parsed[:6], tzinfo=UTC)
-                if published < cutoff:
+        page_size = max(1, page_size)
+        max_results_per_category = max(1, max_results_per_category)
+        headers = {"User-Agent": self.user_agent}
+        with httpx.Client(timeout=self.timeout_seconds, headers=headers) as client:
+            for cat in categories:
+                category = cat.strip()
+                if not category:
                     continue
-                updated = datetime(*entry.updated_parsed[:6], tzinfo=UTC)
-                paper_id = entry.id.rsplit("/", 1)[-1]
-                paper = Paper(
-                    paper_id=paper_id,
-                    title=" ".join(entry.title.split()),
-                    summary=" ".join(entry.summary.split()),
-                    authors=[a.name for a in entry.authors],
-                    categories=[t["term"] for t in entry.tags],
-                    published=published,
-                    updated=updated,
-                    url=entry.id,
-                )
-                papers[paper_id] = paper
+
+                start = 0
+                reached_cutoff = False
+                while start < max_results_per_category and not reached_cutoff:
+                    batch_size = min(page_size, max_results_per_category - start)
+                    url = self._build_query_url(category=category, start=start, max_results=batch_size)
+                    response = client.get(url)
+                    response.raise_for_status()
+
+                    feed = feedparser.parse(response.text)
+                    if not feed.entries:
+                        break
+
+                    for entry in feed.entries:
+                        published = datetime(*entry.published_parsed[:6], tzinfo=UTC)
+                        if published < cutoff:
+                            reached_cutoff = True
+                            break
+                        paper = self._entry_to_paper(entry)
+                        papers[paper.paper_id] = paper
+
+                    start += len(feed.entries)
+                    if len(feed.entries) < batch_size:
+                        break
 
         return sorted(papers.values(), key=lambda p: p.published, reverse=True)
+
+    def _build_query_url(self, category: str, start: int, max_results: int) -> str:
+        query = f"cat:{category}"
+        return (
+            "https://export.arxiv.org/api/query?"
+            f"search_query={quote_plus(query)}"
+            f"&start={start}&max_results={max_results}"
+            "&sortBy=submittedDate&sortOrder=descending"
+        )
+
+    def _entry_to_paper(self, entry) -> Paper:
+        published = datetime(*entry.published_parsed[:6], tzinfo=UTC)
+        updated = datetime(*entry.updated_parsed[:6], tzinfo=UTC)
+        paper_id = entry.id.rsplit("/", 1)[-1]
+        return Paper(
+            paper_id=paper_id,
+            title=" ".join(entry.title.split()),
+            summary=" ".join(entry.summary.split()),
+            authors=[a.name for a in entry.authors],
+            categories=[t["term"] for t in entry.tags],
+            published=published,
+            updated=updated,
+            url=entry.id,
+        )

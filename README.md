@@ -7,6 +7,7 @@
 - 调用 LLM 生成中文摘要与阅读建议
 - 发送通知（控制台 / Email / Telegram）
 - 支持定时运行
+- 支持命令行按时间窗口检索（近几个月/近1年）并输出摘要
 
 ## 1. 环境准备
 
@@ -71,6 +72,16 @@ arxiv-agent run --settings config/settings.local.yaml --keywords config/keywords
 
 ```bash
 arxiv-agent schedule --settings config/settings.local.yaml --keywords config/keywords.local.yaml
+```
+
+命令行检索近几个月/近1年的相关论文并输出摘要：
+
+```bash
+# 近 6 个月，按 llm-agent profile，输出前 20 篇
+arxiv-agent search --settings config/settings.local.yaml --keywords config/keywords.local.yaml --months 6 --profile llm-agent --top-k 20
+
+# 近 1 年，按 rag profile
+arxiv-agent search --settings config/settings.local.yaml --keywords config/keywords.local.yaml --years 1 --profile rag --top-k 20
 ```
 
 ## 4. 筛选规则说明
