@@ -10,11 +10,31 @@
 
 ## 1. 环境准备
 
+先确认 Python 版本（项目要求 `3.11.x`）：
+
+```bash
+python3.11 --version
+```
+
+如果提示找不到 `python3.11`，可先安装：
+
+- macOS (Homebrew): `brew install python@3.11`
+- Linux (pyenv): `pyenv install 3.11.9 && pyenv local 3.11.9`
+- Windows (conda): `conda create -n arxiv-tok python=3.11 -y && conda activate arxiv-tok`
+
+安装好后再执行：
+
 ```bash
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -U pip
 pip install -e .
+```
+
+Windows PowerShell 激活命令：
+
+```powershell
+.venv\Scripts\Activate.ps1
 ```
 
 ## 2. 配置
