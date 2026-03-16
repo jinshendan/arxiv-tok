@@ -104,6 +104,20 @@ class ArxivClient:
                     if len(feed.entries) < batch_size:
                         break
 
+                if progress_callback:
+                    progress_callback(
+                        {
+                            "phase": "category_done",
+                            "category": category,
+                            "category_index": cat_index,
+                            "category_total": total_categories,
+                            "fetched": len(papers),
+                            "start": start,
+                            "max_results_per_category": max_results_per_category,
+                            "hit_fetch_cap": bool(start >= max_results_per_category and not reached_cutoff),
+                        }
+                    )
+
         return sorted(papers.values(), key=lambda p: p.published, reverse=True)
 
     def _request_with_retry(

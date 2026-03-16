@@ -29,7 +29,7 @@ _PROGRESS_MESSAGES = {
         "en": "Preparing search...",
     },
     "fetching": {
-        "zh": "抓取中: {category} ({idx}/{total}), fetched {fetched}",
+        "zh": "抓取中: {category} ({idx}/{total}), 已抓取 {fetched}",
         "en": "Fetching: {category} ({idx}/{total}), fetched {fetched}",
     },
     "fetched_done": {
@@ -43,6 +43,10 @@ _PROGRESS_MESSAGES = {
     "impact_done": {
         "zh": "外部热度数据完成: {count} 篇命中",
         "en": "External impact data ready: {count} papers matched",
+    },
+    "coverage_limited": {
+        "zh": "提示: 有 {count} 个分类达到抓取上限，当前结果可能偏向最近日期。可提高“每个分类抓取上限”或减少分类。",
+        "en": "Note: {count} categories hit fetch cap. Results may skew to recent dates. Increase fetch cap or reduce categories.",
     },
     "filtered": {
         "zh": "过滤完成: {profile} ({idx}/{total}), 命中 {count}",
@@ -121,8 +125,15 @@ def run_search(
         max_retries=settings.arxiv_max_retries,
     )
     num_categories = max(1, len(rules.categories))
+    capped_categories = 0
 
     def on_fetch_progress(payload: dict) -> None:
+        nonlocal capped_categories
+        phase = str(payload.get("phase", "fetch"))
+        if phase == "category_done":
+            if bool(payload.get("hit_fetch_cap", False)):
+                capped_categories += 1
+            return
         category = str(payload.get("category", ""))
         category_index = int(payload.get("category_index", 1))
         start = int(payload.get("start", 0))
@@ -153,6 +164,8 @@ def run_search(
     if should_stop and should_stop():
         stopped = True
     emit(_msg(language, "fetched_done", count=len(papers)), 0.62)
+    if capped_categories > 0:
+        emit(_msg(language, "coverage_limited", count=capped_categories), 0.625)
 
     summarizer = Summarizer(settings.model)
     semantic_matcher = SemanticMatcher(settings.model)

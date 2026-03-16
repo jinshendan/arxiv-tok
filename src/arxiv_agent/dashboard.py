@@ -214,6 +214,8 @@ TEXT = {
     "summary": {"zh": "摘要", "en": "Summary"},
     "highlights": {"zh": "要点", "en": "Highlights"},
     "recommendation": {"zh": "建议", "en": "Recommendation"},
+    "published_at": {"zh": "发布时间", "en": "Published"},
+    "updated_at": {"zh": "更新时间", "en": "Updated"},
     "info_start": {"zh": "在左侧设置参数后，点击“开始搜索”。", "en": "Set parameters on the left, then click Start Search."},
     "error_429": {
         "zh": "arXiv 请求过于频繁（429）。请降低抓取上限、缩短时间窗口，或减少分类后重试。",
@@ -519,6 +521,10 @@ def _render_results(lang: str, result: SearchResult) -> None:
             unsafe_allow_html=True,
         )
         st.markdown(f"[{t(lang, 'arxiv_link')}]({paper.url})")
+        st.caption(
+            f"{t(lang, 'published_at')}: {paper.published.strftime('%Y-%m-%d %H:%M UTC')} | "
+            f"{t(lang, 'updated_at')}: {paper.updated.strftime('%Y-%m-%d %H:%M UTC')}"
+        )
         st.markdown(f"**{t(lang, 'summary')}**: {summary.summary_cn}")
         st.markdown(f"**{t(lang, 'highlights')}**: {' | '.join(summary.highlights)}")
         st.markdown(f"**{t(lang, 'recommendation')}**: {summary.recommendation}")
