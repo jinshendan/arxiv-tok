@@ -29,11 +29,17 @@ def run_once(settings: Settings, rules: KeywordRules) -> RunResult:
     db.start_run(run_id)
 
     try:
-        client = ArxivClient(user_agent=settings.user_agent, timeout_seconds=settings.request_timeout_seconds)
+        client = ArxivClient(
+            user_agent=settings.user_agent,
+            timeout_seconds=settings.request_timeout_seconds,
+            min_request_interval_seconds=settings.arxiv_min_request_interval_seconds,
+            max_retries=settings.arxiv_max_retries,
+        )
         papers = client.fetch_recent(
             categories=rules.categories,
             max_results_per_category=settings.max_results_per_category,
             lookback_hours=settings.lookback_hours,
+            page_size=settings.arxiv_page_size,
         )
         db.upsert_papers(papers)
 

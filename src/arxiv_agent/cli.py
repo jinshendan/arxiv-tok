@@ -1,23 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import replace
 from pathlib import Path
+import subprocess
+import sys
 
+import httpx
 import typer
 
 from .config import load_keyword_rules, load_settings
+from .notifier import Notifier
+from .search_service import run_search
 
 app = typer.Typer(help="arXiv monitoring and summarization agent")
-
-
-def _resolve_lookback_hours(default_hours: int, days: int, months: int, years: float) -> int:
-    if days < 0 or months < 0 or years < 0:
-        raise typer.BadParameter("days/months/years must be non-negative")
-    if days == 0 and months == 0 and years == 0:
-        return default_hours
-
-    total_days = days + months * 30 + years * 365
-    return max(1, int(total_days * 24))
 
 
 @app.command("init-db")
@@ -77,54 +71,56 @@ def search(
         600, min=50, max=5000, help="Fetch limit per arXiv category for this search"
     ),
 ) -> None:
-    from .arxiv_client import ArxivClient
-    from .filtering import filter_and_rank
-    from .models import ScoredPaper, SummaryResult
-    from .notifier import Notifier
-    from .semantic import SemanticMatcher
-    from .summarizer import Summarizer
-
     s = load_settings(settings)
     r = load_keyword_rules(keywords)
-    if not r.profiles:
-        raise typer.BadParameter("No profiles found in keywords file")
+    try:
+        result = run_search(
+            s,
+            r,
+            days=days,
+            months=months,
+            years=years,
+            profile_names=profile,
+            top_k=top_k,
+            max_results_per_category=max_results_per_category,
+        )
+    except ValueError as e:
+        raise typer.BadParameter(str(e)) from e
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 429:
+            raise typer.BadParameter(
+                "arXiv API 限流(429)。请降低 --max-results-per-category、缩短时间窗口，稍后重试。"
+            ) from e
+        raise
 
-    selected_profiles = r.profiles
-    if profile:
-        target = set(profile)
-        selected_profiles = [p for p in r.profiles if p.name in target]
-        missing = sorted(target - {p.name for p in selected_profiles})
-        if missing:
-            raise typer.BadParameter(f"Unknown profile(s): {', '.join(missing)}")
-
-    lookback_hours = _resolve_lookback_hours(s.lookback_hours, days=days, months=months, years=years)
-    client = ArxivClient(user_agent=s.user_agent, timeout_seconds=s.request_timeout_seconds)
-    papers = client.fetch_recent(
-        categories=r.categories,
-        max_results_per_category=max_results_per_category,
-        lookback_hours=lookback_hours,
-    )
-
-    summarizer = Summarizer(s.openai)
-    semantic_matcher = SemanticMatcher(s.openai)
     notifier = Notifier(s.notify)
-
-    items: list[tuple[ScoredPaper, SummaryResult]] = []
-    for p in selected_profiles:
-        profile_for_search = replace(p, max_items_per_run=top_k)
-        semantic_scores = semantic_matcher.score_papers(papers, profile_for_search.semantic_queries)
-        ranked = filter_and_rank(papers, profile_for_search, semantic_scores=semantic_scores)
-        for scored in ranked:
-            summary = summarizer.summarize(scored.paper)
-            items.append((scored, summary))
-
     title = (
-        f"arXiv 搜索结果 (window={lookback_hours / 24:.1f} days, "
-        f"profiles={','.join(p.name for p in selected_profiles)})"
+        f"arXiv 搜索结果 (window={result.lookback_hours / 24:.1f} days, "
+        f"profiles={','.join(result.selected_profiles)})"
     )
-    digest = notifier.format_digest(items, title=title, empty_message="该时间窗口内无命中论文。")
+    digest = notifier.format_digest(result.items, title=title, empty_message="该时间窗口内无命中论文。")
     typer.echo(digest)
-    typer.echo(f"Fetched={len(papers)} Matched={len(items)}")
+    typer.echo(f"Fetched={result.fetched} Matched={result.matched}")
+
+
+@app.command("dashboard")
+def dashboard(
+    host: str = typer.Option("127.0.0.1", help="Dashboard host"),
+    port: int = typer.Option(8501, min=1, max=65535, help="Dashboard port"),
+) -> None:
+    dashboard_file = Path(__file__).with_name("dashboard.py")
+    cmd = [
+        sys.executable,
+        "-m",
+        "streamlit",
+        "run",
+        str(dashboard_file),
+        "--server.address",
+        host,
+        "--server.port",
+        str(port),
+    ]
+    raise typer.Exit(subprocess.call(cmd))
 
 
 if __name__ == "__main__":

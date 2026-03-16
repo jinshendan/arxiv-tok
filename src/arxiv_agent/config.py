@@ -53,6 +53,9 @@ class Settings:
     database_path: str = "data/arxiv_agent.db"
     lookback_hours: int = 30
     max_results_per_category: int = 150
+    arxiv_page_size: int = 200
+    arxiv_min_request_interval_seconds: float = 3.0
+    arxiv_max_retries: int = 6
     request_timeout_seconds: int = 30
     user_agent: str = "arxiv-agent/0.1"
     openai: OpenAIConfig = field(default_factory=OpenAIConfig)
@@ -100,6 +103,9 @@ def load_settings(path: str | Path) -> Settings:
         database_path=data.get("database_path", "data/arxiv_agent.db"),
         lookback_hours=int(data.get("lookback_hours", 30)),
         max_results_per_category=int(data.get("max_results_per_category", 150)),
+        arxiv_page_size=int(data.get("arxiv_page_size", 200)),
+        arxiv_min_request_interval_seconds=float(data.get("arxiv_min_request_interval_seconds", 3.0)),
+        arxiv_max_retries=int(data.get("arxiv_max_retries", 6)),
         request_timeout_seconds=int(data.get("request_timeout_seconds", 30)),
         user_agent=data.get("user_agent", "arxiv-agent/0.1"),
         openai=OpenAIConfig(

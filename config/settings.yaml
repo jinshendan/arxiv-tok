@@ -1,6 +1,9 @@
 database_path: data/arxiv_agent.db
 lookback_hours: 30
 max_results_per_category: 120
+arxiv_page_size: 200
+arxiv_min_request_interval_seconds: 3.0
+arxiv_max_retries: 6
 request_timeout_seconds: 30
 user_agent: arxiv-agent/0.1 (mailto:your_email@example.com)
 

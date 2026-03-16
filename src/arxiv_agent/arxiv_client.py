@@ -1,27 +1,35 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+import time
 from urllib.parse import quote_plus
 
 import feedparser
 import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential
 
 from .models import Paper
 
 
 class ArxivClient:
-    def __init__(self, user_agent: str, timeout_seconds: int = 30) -> None:
+    def __init__(
+        self,
+        user_agent: str,
+        timeout_seconds: int = 30,
+        min_request_interval_seconds: float = 3.0,
+        max_retries: int = 6,
+    ) -> None:
         self.user_agent = user_agent
         self.timeout_seconds = timeout_seconds
+        self.min_request_interval_seconds = max(0.0, float(min_request_interval_seconds))
+        self.max_retries = max(1, int(max_retries))
+        self._next_allowed_request_at = 0.0
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10), reraise=True)
     def fetch_recent(
         self,
         categories: list[str],
         max_results_per_category: int,
         lookback_hours: int,
-        page_size: int = 100,
+        page_size: int = 200,
     ) -> list[Paper]:
         cutoff = datetime.now(UTC) - timedelta(hours=lookback_hours)
         papers: dict[str, Paper] = {}
@@ -39,8 +47,7 @@ class ArxivClient:
                 while start < max_results_per_category and not reached_cutoff:
                     batch_size = min(page_size, max_results_per_category - start)
                     url = self._build_query_url(category=category, start=start, max_results=batch_size)
-                    response = client.get(url)
-                    response.raise_for_status()
+                    response = self._request_with_retry(client, url)
 
                     feed = feedparser.parse(response.text)
                     if not feed.entries:
@@ -59,6 +66,57 @@ class ArxivClient:
                         break
 
         return sorted(papers.values(), key=lambda p: p.published, reverse=True)
+
+    def _request_with_retry(self, client: httpx.Client, url: str) -> httpx.Response:
+        last_exc: Exception | None = None
+        for attempt in range(1, self.max_retries + 1):
+            self._throttle()
+            try:
+                response = client.get(url)
+            except httpx.HTTPError as exc:
+                last_exc = exc
+                if attempt >= self.max_retries:
+                    raise
+                time.sleep(self._retry_delay_seconds(attempt=attempt))
+                continue
+
+            if response.status_code == 429 or response.status_code >= 500:
+                if attempt >= self.max_retries:
+                    response.raise_for_status()
+                time.sleep(self._retry_delay_seconds(attempt=attempt, response=response))
+                continue
+
+            response.raise_for_status()
+            return response
+
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError("Failed to fetch arXiv response after retries")
+
+    def _throttle(self) -> None:
+        if self.min_request_interval_seconds <= 0:
+            return
+        now = time.monotonic()
+        wait_seconds = self._next_allowed_request_at - now
+        if wait_seconds > 0:
+            time.sleep(wait_seconds)
+        self._next_allowed_request_at = time.monotonic() + self.min_request_interval_seconds
+
+    def _retry_delay_seconds(self, attempt: int, response: httpx.Response | None = None) -> float:
+        if response is not None:
+            retry_after = response.headers.get("Retry-After", "").strip()
+            if retry_after:
+                try:
+                    parsed = float(retry_after)
+                    if parsed > 0:
+                        return min(parsed, 120.0)
+                except ValueError:
+                    pass
+
+        exp = min(2**attempt, 60)
+        if response is not None and response.status_code == 429:
+            return max(3.0, float(exp))
+        return float(exp)
 
     def _build_query_url(self, category: str, start: int, max_results: int) -> str:
         query = f"cat:{category}"
