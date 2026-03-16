@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import os
+import queue
+import threading
+import time
 from dataclasses import replace
 from pathlib import Path
 
@@ -100,6 +103,9 @@ def _build_window(mode: str, value: int) -> tuple[int, int, float]:
 
 
 def _render_results(result: SearchResult) -> None:
+    if result.stopped:
+        st.warning("搜索已手动停止，以下是停止前已获取到的结果。")
+
     m1, m2, m3 = st.columns(3)
     m1.metric("抓取论文数", result.fetched)
     m2.metric("命中结果数", result.matched)
@@ -126,6 +132,118 @@ def _render_results(result: SearchResult) -> None:
         st.markdown(f"**建议**: {summary.recommendation}")
         st.markdown("</div>", unsafe_allow_html=True)
 
+
+def _ensure_search_state() -> None:
+    st.session_state.setdefault("search_running", False)
+    st.session_state.setdefault("search_progress_message", "等待开始")
+    st.session_state.setdefault("search_progress_value", 0.0)
+    st.session_state.setdefault("search_events", None)
+    st.session_state.setdefault("search_thread", None)
+    st.session_state.setdefault("search_stop_event", None)
+    st.session_state.setdefault("search_error", "")
+
+
+def _drain_search_events() -> None:
+    events: queue.Queue | None = st.session_state.get("search_events")
+    if events is None:
+        return
+
+    while True:
+        try:
+            event = events.get_nowait()
+        except queue.Empty:
+            break
+
+        event_type = event.get("type")
+        if event_type == "progress":
+            st.session_state["search_progress_message"] = event.get("message", "处理中...")
+            st.session_state["search_progress_value"] = float(event.get("progress", 0.0))
+        elif event_type == "result":
+            result: SearchResult = event["result"]
+            st.session_state["dashboard_result"] = result
+            st.session_state["search_running"] = False
+            st.session_state["search_progress_value"] = 1.0
+            st.session_state["search_progress_message"] = "搜索完成"
+            st.session_state["search_error"] = ""
+            st.session_state["search_events"] = None
+            st.session_state["search_thread"] = None
+            st.session_state["search_stop_event"] = None
+        elif event_type == "error":
+            st.session_state["search_running"] = False
+            st.session_state["search_error"] = str(event.get("message", "搜索失败"))
+            st.session_state["search_events"] = None
+            st.session_state["search_thread"] = None
+            st.session_state["search_stop_event"] = None
+
+
+def _start_search_job(
+    settings: Settings,
+    rules: KeywordRules,
+    *,
+    days: int,
+    months: int,
+    years: float,
+    top_k: int,
+    max_results_per_category: int,
+) -> None:
+    events: queue.Queue = queue.Queue()
+    stop_event = threading.Event()
+
+    def on_progress(message: str, progress: float) -> None:
+        events.put({"type": "progress", "message": message, "progress": progress})
+
+    def worker() -> None:
+        try:
+            result = run_search(
+                settings,
+                rules,
+                days=days,
+                months=months,
+                years=years,
+                profile_names=["custom-search"],
+                top_k=top_k,
+                max_results_per_category=max_results_per_category,
+                progress_callback=on_progress,
+                should_stop=stop_event.is_set,
+            )
+            events.put({"type": "result", "result": result})
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 429:
+                events.put(
+                    {
+                        "type": "error",
+                        "message": (
+                            "arXiv 请求过于频繁（429）。请降低抓取上限、缩短时间窗口，"
+                            "或减少分类后重试。"
+                        ),
+                    }
+                )
+            else:
+                events.put({"type": "error", "message": f"搜索失败: {e}"})
+        except Exception as e:
+            events.put({"type": "error", "message": f"搜索失败: {e}"})
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+
+    st.session_state["search_running"] = True
+    st.session_state["search_progress_message"] = "任务已启动..."
+    st.session_state["search_progress_value"] = 0.01
+    st.session_state["search_error"] = ""
+    st.session_state["search_events"] = events
+    st.session_state["search_thread"] = thread
+    st.session_state["search_stop_event"] = stop_event
+
+
+def _request_stop() -> None:
+    stop_event: threading.Event | None = st.session_state.get("search_stop_event")
+    if stop_event is not None:
+        stop_event.set()
+        st.session_state["search_progress_message"] = "正在停止搜索并整理已获得结果..."
+
+
+_ensure_search_state()
+_drain_search_events()
 
 st.markdown(
     '<div class="hero-card"><h2>arxiv-tok 仪表盘</h2>'
@@ -204,7 +322,21 @@ with st.sidebar:
     max_results = st.slider("每个分类抓取上限", min_value=50, max_value=2000, value=300, step=50)
     st.caption("提示：这个值越大，请求越多，更容易触发 arXiv 限流。建议先从 200-400 开始。")
 
-    run = st.button("开始搜索", type="primary", use_container_width=True)
+    run = st.button(
+        "开始搜索",
+        type="primary",
+        use_container_width=True,
+        disabled=bool(st.session_state.get("search_running")),
+    )
+    stop = st.button(
+        "停止搜索并返回当前结果",
+        use_container_width=True,
+        disabled=not bool(st.session_state.get("search_running")),
+    )
+
+if stop:
+    _request_stop()
+    st.rerun()
 
 if run:
     include_any = _parse_terms(include_any_raw)
@@ -254,32 +386,31 @@ if run:
     runtime_rules = KeywordRules(categories=categories, profiles=[custom_profile])
 
     d, m, y = _build_window(window_mode, window_value)
+    _start_search_job(
+        runtime_settings,
+        runtime_rules,
+        days=d,
+        months=m,
+        years=y,
+        top_k=int(top_k),
+        max_results_per_category=int(max_results),
+    )
+    st.rerun()
 
-    try:
-        with st.spinner("正在抓取并总结论文..."):
-            result = run_search(
-                runtime_settings,
-                runtime_rules,
-                days=d,
-                months=m,
-                years=y,
-                profile_names=["custom-search"],
-                top_k=int(top_k),
-                max_results_per_category=int(max_results),
-            )
-        st.session_state["dashboard_result"] = result
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code == 429:
-            st.error(
-                "arXiv 请求过于频繁（429）。请先降低“每个分类抓取上限”、缩短时间窗口，"
-                "或减少分类后重试。"
-            )
-        else:
-            st.error(f"搜索失败: {e}")
-    except Exception as e:
-        st.error(f"搜索失败: {e}")
+if st.session_state.get("search_running"):
+    progress = float(st.session_state.get("search_progress_value", 0.0))
+    st.progress(max(0.0, min(1.0, progress)))
+    st.info(str(st.session_state.get("search_progress_message", "搜索进行中...")))
+    st.caption("可随时点击“停止搜索并返回当前结果”。")
+
+if st.session_state.get("search_error"):
+    st.error(str(st.session_state["search_error"]))
 
 if "dashboard_result" in st.session_state:
     _render_results(st.session_state["dashboard_result"])
 else:
     st.info("在左侧设置参数后，点击“开始搜索”。")
+
+if st.session_state.get("search_running"):
+    time.sleep(0.6)
+    st.rerun()
