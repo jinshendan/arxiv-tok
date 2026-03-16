@@ -97,32 +97,49 @@ export OPENAI_API_KEY="your_api_key"
 
 ## 命令行用法
 
+CLI 已优化为“自动找配置”：
+
+- 优先读取 `config/settings.local.yaml`、`config/keywords.local.yaml`
+- 若不存在，再回退到 `config/settings.yaml`、`config/keywords.yaml`
+- 也可通过环境变量覆盖：
+  - `ARXIV_AGENT_SETTINGS`
+  - `ARXIV_AGENT_KEYWORDS`
+
+查看当前生效路径：
+
+```bash
+arxiv-agent paths
+```
+
 ### 初始化数据库
 
 ```bash
-arxiv-agent init-db --settings config/settings.yaml
+arxiv-agent init-db
 ```
 
 ### 跑一次每日任务流（抓取 + 过滤 + 总结 + 通知）
 
 ```bash
-arxiv-agent run --settings config/settings.yaml --keywords config/keywords.yaml
+arxiv-agent run
 ```
 
 ### 定时运行
 
 ```bash
-arxiv-agent schedule --settings config/settings.yaml --keywords config/keywords.yaml
+arxiv-agent schedule
 ```
 
 ### 按时间窗口检索（近几个月 / 近1年）
 
 ```bash
-# 近 6 个月
-arxiv-agent search --settings config/settings.yaml --keywords config/keywords.yaml --months 6 --profile llm-agent --top-k 20
+# 近 6 个月（简写）
+arxiv-agent search --last 6m -p llm-agent -k 20
 
 # 近 1 年
-arxiv-agent search --settings config/settings.yaml --keywords config/keywords.yaml --years 1 --profile rag --top-k 20
+arxiv-agent search --last 1y -p rag -k 20
+
+# 近 14 天（周写法）
+arxiv-agent search --last 2w -k 15
 ```
 
 ## 配置文件
