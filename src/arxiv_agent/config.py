@@ -7,11 +7,14 @@ import yaml
 
 
 @dataclass
-class OpenAIConfig:
+class ModelConfig:
     enabled: bool = False
+    provider: str = "openai"
+    base_url: str = "https://api.openai.com/v1"
     api_key_env: str = "OPENAI_API_KEY"
     model: str = "gpt-5-mini"
     embedding_model: str = "text-embedding-3-large"
+    require_api_key: bool = True
     timeout_seconds: int = 60
 
 
@@ -58,7 +61,7 @@ class Settings:
     arxiv_max_retries: int = 6
     request_timeout_seconds: int = 30
     user_agent: str = "arxiv-agent/0.1"
-    openai: OpenAIConfig = field(default_factory=OpenAIConfig)
+    model: ModelConfig = field(default_factory=ModelConfig)
     notify: NotifyConfig = field(default_factory=NotifyConfig)
     schedule: ScheduleConfig = field(default_factory=ScheduleConfig)
 
@@ -93,7 +96,8 @@ def _read_yaml(path: Path) -> dict:
 def load_settings(path: str | Path) -> Settings:
     data = _read_yaml(Path(path))
 
-    openai_data = data.get("openai", {})
+    # Backward compatibility: prefer `model`, fallback to legacy `openai`.
+    model_data = data.get("model", data.get("openai", {}))
     notify_data = data.get("notify", {})
     email_data = notify_data.get("email", {})
     telegram_data = notify_data.get("telegram", {})
@@ -108,12 +112,15 @@ def load_settings(path: str | Path) -> Settings:
         arxiv_max_retries=int(data.get("arxiv_max_retries", 6)),
         request_timeout_seconds=int(data.get("request_timeout_seconds", 30)),
         user_agent=data.get("user_agent", "arxiv-agent/0.1"),
-        openai=OpenAIConfig(
-            enabled=bool(openai_data.get("enabled", False)),
-            api_key_env=openai_data.get("api_key_env", "OPENAI_API_KEY"),
-            model=openai_data.get("model", "gpt-5-mini"),
-            embedding_model=openai_data.get("embedding_model", "text-embedding-3-large"),
-            timeout_seconds=int(openai_data.get("timeout_seconds", 60)),
+        model=ModelConfig(
+            enabled=bool(model_data.get("enabled", False)),
+            provider=str(model_data.get("provider", "openai")),
+            base_url=str(model_data.get("base_url", "https://api.openai.com/v1")),
+            api_key_env=str(model_data.get("api_key_env", "OPENAI_API_KEY")),
+            model=str(model_data.get("model", "gpt-5-mini")),
+            embedding_model=str(model_data.get("embedding_model", "text-embedding-3-large")),
+            require_api_key=bool(model_data.get("require_api_key", True)),
+            timeout_seconds=int(model_data.get("timeout_seconds", 60)),
         ),
         notify=NotifyConfig(
             console=bool(notify_data.get("console", True)),

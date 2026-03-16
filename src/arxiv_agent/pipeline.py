@@ -43,8 +43,8 @@ def run_once(settings: Settings, rules: KeywordRules) -> RunResult:
         )
         db.upsert_papers(papers)
 
-        summarizer = Summarizer(settings.openai)
-        semantic_matcher = SemanticMatcher(settings.openai)
+        summarizer = Summarizer(settings.model)
+        semantic_matcher = SemanticMatcher(settings.model)
         notifier = Notifier(settings.notify)
 
         items: list[tuple[ScoredPaper, SummaryResult]] = []

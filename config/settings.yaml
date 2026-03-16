@@ -7,10 +7,23 @@ arxiv_max_retries: 6
 request_timeout_seconds: 30
 user_agent: arxiv-agent/0.1 (mailto:your_email@example.com)
 
-openai:
+model:
   enabled: false
+  # openai | openai_compatible | ollama
+  provider: openai
+  # For openai/openai_compatible this should be an OpenAI-style base URL.
+  # Examples:
+  #   OpenAI: https://api.openai.com/v1
+  #   DeepSeek: https://api.deepseek.com/v1
+  #   Qwen (DashScope compatible): https://dashscope.aliyuncs.com/compatible-mode/v1
+  #   Local OpenAI-compatible gateway: http://127.0.0.1:8000/v1
+  #   Ollama: http://127.0.0.1:11434
+  base_url: https://api.openai.com/v1
   api_key_env: OPENAI_API_KEY
+  # For local openai-compatible endpoints without auth, set require_api_key: false.
+  require_api_key: true
   model: gpt-5-mini
+  # For Ollama, use local model names (e.g. qwen2.5:7b, deepseek-r1:8b).
   embedding_model: text-embedding-3-large
   timeout_seconds: 60
 

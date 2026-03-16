@@ -143,8 +143,8 @@ def run_search(
         stopped = True
     emit(_msg(language, "fetched_done", count=len(papers)), 0.62)
 
-    summarizer = Summarizer(settings.openai)
-    semantic_matcher = SemanticMatcher(settings.openai)
+    summarizer = Summarizer(settings.model)
+    semantic_matcher = SemanticMatcher(settings.model)
 
     ranked_by_profile: list[tuple[str, list[ScoredPaper]]] = []
     for idx, profile in enumerate(selected_profiles, start=1):

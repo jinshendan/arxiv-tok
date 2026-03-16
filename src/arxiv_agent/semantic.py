@@ -1,20 +1,19 @@
 from __future__ import annotations
 
 import math
-import os
 
-import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from .config import OpenAIConfig
+from .config import ModelConfig
+from .llm_provider import LLMProviderClient
 from .models import Paper
 
 
 class SemanticMatcher:
-    def __init__(self, config: OpenAIConfig) -> None:
+    def __init__(self, config: ModelConfig) -> None:
         self.config = config
-        self._api_key = os.getenv(config.api_key_env, "")
-        self._enabled = bool(config.enabled and self._api_key)
+        self._client = LLMProviderClient(config)
+        self._enabled = self._client.embedding_enabled
         self._query_cache: dict[tuple[str, ...], list[list[float]]] = {}
 
     @property
@@ -44,18 +43,7 @@ class SemanticMatcher:
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=8), reraise=True)
     def _embed_texts(self, texts: list[str]) -> list[list[float]]:
-        payload = {"model": self.config.embedding_model, "input": texts}
-        headers = {"Authorization": f"Bearer {self._api_key}", "Content-Type": "application/json"}
-
-        with httpx.Client(timeout=self.config.timeout_seconds) as client:
-            response = client.post("https://api.openai.com/v1/embeddings", headers=headers, json=payload)
-            response.raise_for_status()
-            data = response.json()
-
-        items = data.get("data", [])
-        if len(items) != len(texts):
-            raise ValueError("Unexpected embedding response size")
-        return [item["embedding"] for item in items]
+        return self._client.embed_texts(texts)
 
 
 def _cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:

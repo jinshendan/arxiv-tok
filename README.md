@@ -15,7 +15,7 @@
 - Dashboard 一键搜索（支持中文/英文界面切换）
 - 支持全领域检索（计算机、数学、统计、物理、生物、金融、经济、电气等）
 - 关键词规则匹配（`include_any / include_all / exclude_any`）
-- 可选 OpenAI 语义匹配（支持中英文语义相近检索）
+- 可选多 Provider 模型 API（OpenAI / DeepSeek / Qwen / Ollama）
 - 自动生成论文摘要、要点和阅读建议
 - 命令行模式支持批量检索与自动化
 - 内置限流与重试，减少 arXiv 429 报错
@@ -69,13 +69,42 @@ Dashboard 左侧可配置：
 
 支持实时进度显示，也可手动点击“停止搜索并返回当前结果”。
 
-### OpenAI 语义匹配（可选）
+### 模型 API 配置（可选）
 
-```bash
-export OPENAI_API_KEY="your_api_key"
+项目支持三种 Provider：
+
+- `openai`
+- `openai_compatible`（DeepSeek / Qwen 兼容接口 / 本地 OpenAI-compatible 网关）
+- `ollama`（本地模型）
+
+`config/settings.yaml` 示例：
+
+```yaml
+model:
+  enabled: true
+  provider: openai_compatible
+  base_url: https://api.deepseek.com/v1
+  api_key_env: DEEPSEEK_API_KEY
+  require_api_key: true
+  model: deepseek-chat
+  embedding_model: text-embedding-3-large
+  timeout_seconds: 60
 ```
 
-如果未设置 API Key，系统会自动降级为关键词匹配，不会中断搜索。
+本地 Ollama 示例：
+
+```yaml
+model:
+  enabled: true
+  provider: ollama
+  base_url: http://127.0.0.1:11434
+  require_api_key: false
+  model: qwen2.5:7b-instruct
+  embedding_model: nomic-embed-text
+  timeout_seconds: 60
+```
+
+如果模型 API 不可用，系统会自动降级为关键词匹配和本地摘要，不会中断搜索。
 
 ### 命令行用法
 
@@ -141,7 +170,12 @@ cp config/keywords.yaml config/keywords.local.yaml
 
 #### 2) 没有 OpenAI Key 能用吗？
 
-可以。只是语义匹配和 LLM 摘要会降级为本地规则/摘要。
+可以。你可以：
+
+- 使用 `ollama` 本地模型（无需 API key）
+- 或使用不强制 key 的 `openai_compatible` 网关（`require_api_key: false`）
+
+如果模型 API 不可用，语义匹配和 LLM 摘要会自动降级。
 
 #### 3) 为什么结果为空？
 
@@ -160,7 +194,7 @@ You can configure keywords, time windows, and search scope in a web dashboard, t
 - One-click Dashboard search (with Chinese/English UI switch)
 - Cross-domain search support (CS, math, stats, physics, bio, finance, economics, EESS, etc.)
 - Rule-based keyword filtering (`include_any / include_all / exclude_any`)
-- Optional OpenAI semantic matching for multilingual intent retrieval
+- Optional multi-provider model APIs (OpenAI / DeepSeek / Qwen / Ollama)
 - Automatic paper summary, highlights, and read recommendation
 - CLI mode for batch search and automation
 - Built-in throttling/retries to reduce arXiv 429 failures
@@ -214,13 +248,42 @@ Configure from the left panel:
 
 Live progress is shown during search. You can also stop the run and keep partial results.
 
-### OpenAI Semantic Matching (Optional)
+### Model API Setup (Optional)
 
-```bash
-export OPENAI_API_KEY="your_api_key"
+The project supports three providers:
+
+- `openai`
+- `openai_compatible` (DeepSeek / Qwen-compatible / local OpenAI-compatible gateways)
+- `ollama` (local models)
+
+Example (`config/settings.yaml`):
+
+```yaml
+model:
+  enabled: true
+  provider: openai_compatible
+  base_url: https://api.deepseek.com/v1
+  api_key_env: DEEPSEEK_API_KEY
+  require_api_key: true
+  model: deepseek-chat
+  embedding_model: text-embedding-3-large
+  timeout_seconds: 60
 ```
 
-If no API key is provided, the app falls back to lexical keyword matching.
+Local Ollama example:
+
+```yaml
+model:
+  enabled: true
+  provider: ollama
+  base_url: http://127.0.0.1:11434
+  require_api_key: false
+  model: qwen2.5:7b-instruct
+  embedding_model: nomic-embed-text
+  timeout_seconds: 60
+```
+
+If model APIs are unavailable, the app gracefully falls back to lexical matching and local summaries.
 
 ### CLI Usage
 
@@ -284,9 +347,14 @@ Tunable settings (`config/settings.yaml`):
 - `arxiv_max_retries`
 - `arxiv_page_size`
 
-#### 2) Can I use it without OpenAI API key?
+#### 2) Can I use it without an OpenAI API key?
 
-Yes. Semantic matching and LLM summaries will degrade to local lexical/fallback behavior.
+Yes. You can:
+
+- Use local `ollama` models (no API key required)
+- Or use an `openai_compatible` endpoint with `require_api_key: false`
+
+If model APIs are unavailable, semantic matching and LLM summaries degrade automatically.
 
 #### 3) Why are there no results?
 

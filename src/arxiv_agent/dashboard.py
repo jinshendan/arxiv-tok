@@ -112,7 +112,8 @@ TEXT = {
     "include_all": {"zh": "必须包含关键词 include_all（可选）", "en": "include_all (optional)"},
     "exclude_any": {"zh": "排除关键词 exclude_any（可选）", "en": "exclude_any (optional)"},
     "semantic": {"zh": "语义匹配", "en": "Semantic Matching"},
-    "semantic_on": {"zh": "启用 OpenAI 语义匹配", "en": "Enable OpenAI semantic matching"},
+    "semantic_on": {"zh": "启用语义匹配（模型 API）", "en": "Enable semantic matching (Model API)"},
+    "semantic_provider": {"zh": "当前模型提供方", "en": "Current model provider"},
     "semantic_queries": {
         "zh": "语义查询 semantic_queries（一行一个）",
         "en": "semantic_queries (one per line)",
@@ -131,8 +132,8 @@ TEXT = {
         "en": "Please provide at least one of include_any/include_all/semantic_queries.",
     },
     "no_api_key": {
-        "zh": "未检测到 OPENAI_API_KEY，语义匹配已自动关闭。",
-        "en": "OPENAI_API_KEY not found. Semantic matching is disabled automatically.",
+        "zh": "未检测到 {env_name}，语义匹配已自动关闭。",
+        "en": "{env_name} not found. Semantic matching is disabled automatically.",
     },
     "no_categories": {
         "zh": "请至少选择一个方向，或填写一个有效分类。",
@@ -404,7 +405,12 @@ if "ui_lang" not in st.session_state:
 
 lang = st.session_state.get("ui_lang", "zh")
 base_settings = _load_base_settings()
-api_key_exists = bool(os.getenv(base_settings.openai.api_key_env, ""))
+model_cfg = base_settings.model
+provider = model_cfg.provider.strip().lower()
+api_key_exists = bool(os.getenv(model_cfg.api_key_env, ""))
+provider_requires_key = provider == "openai" or (model_cfg.require_api_key and provider != "ollama")
+model_chat_ready = bool(model_cfg.enabled and model_cfg.model and ((not provider_requires_key) or api_key_exists))
+embedding_ready = bool(model_cfg.embedding_model)
 
 _ensure_search_state(lang)
 _drain_search_events(lang)
@@ -487,7 +493,8 @@ with st.sidebar:
     exclude_any_raw = st.text_area(t(lang, "exclude_any"), value="survey")
 
     st.subheader(t(lang, "semantic"))
-    semantic_on = st.checkbox(t(lang, "semantic_on"), value=api_key_exists)
+    st.caption(f"{t(lang, 'semantic_provider')}: {provider}")
+    semantic_on = st.checkbox(t(lang, "semantic_on"), value=(model_chat_ready and embedding_ready))
     semantic_queries_raw = st.text_area(
         t(lang, "semantic_queries"),
         value="multi-agent tool use\n跨语言检索增强生成",
@@ -525,12 +532,12 @@ if run:
         st.warning(t(lang, "need_terms"))
         st.stop()
 
-    if semantic_on and not api_key_exists:
-        st.warning(t(lang, "no_api_key"))
+    if semantic_on and provider_requires_key and not api_key_exists:
+        st.warning(t(lang, "no_api_key", env_name=model_cfg.api_key_env))
         semantic_on = False
 
-    runtime_openai_cfg = replace(base_settings.openai, enabled=semantic_on and api_key_exists)
-    runtime_settings = replace(base_settings, openai=runtime_openai_cfg)
+    runtime_model_cfg = replace(base_settings.model, enabled=semantic_on and ((not provider_requires_key) or api_key_exists))
+    runtime_settings = replace(base_settings, model=runtime_model_cfg)
 
     if scope_mode == "all":
         categories = ALL_DOMAIN_CATEGORY_WILDCARDS
